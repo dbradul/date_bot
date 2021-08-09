@@ -1,112 +1,63 @@
 import datetime
-import math
+import os
+import time
+from contextlib import contextmanager
 
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 TIMEOUT = 16
+CHROME_DRIVER_PATH = '/usr/lib/chromium-browser/chromedriver'
+RESUME_PARSING_FROM_ID = ''
 
 # ----------------------------------------------------------------------------------------------------------------------
+@contextmanager
 def create_driver(attach_mode=True, download_dir=None):
     """
     :param attach_mode: Attach to existing browser or create new instance from scratch?
     :param download_dir: Where downloaded files are saved
     :return:
     """
-    # def _get_screenshot_as_file(func):
-    #
-    #     def wrapper(filepath, date_value=None):
-    #         if date_value:
-    #             if isinstance(date_value, str):
-    #                 date_value = date_value.replace('/', '').replace('.', '')
-    #             elif isinstance(date_value, date_type):
-    #                 date_value = date_value.strftime('%Y%m%d')
-    #             filepath_base, _, file_extention = filepath.rpartition('.')
-    #             filepath = '%s_%s.%s' % (filepath_base, date_value, file_extention)
-    #         func(filepath)
-    #
-    #     return wrapper
+    driver = None
 
-    # try:
-    options = webdriver.ChromeOptions()
-    options.add_argument('window-size=1200x600')
-    options.add_argument('disable-gpu')
-    options.add_argument("remote-debugging-port=9222")
-    options.add_argument('no-sandbox')
-    options.add_argument('disable-dev-shm-usage')
+    try:
+        options = webdriver.ChromeOptions()
+        options.add_argument('window-size=1200x600')
+        options.add_argument('disable-gpu')
+        options.add_argument("remote-debugging-port=9222")
+        options.add_argument('no-sandbox')
+        options.add_argument('disable-dev-shm-usage')
 
-    driver = webdriver.Chrome(
-        executable_path='/usr/lib/chromium-browser/chromedriver',
-        chrome_options=options
-    )
+        driver = webdriver.Chrome(executable_path=CHROME_DRIVER_PATH, chrome_options=options)
 
-    # except Exception as ex:
-    #     print(ex)
+        yield driver
 
-    return driver
-    # download_dir = download_dir or BROWSER_DOWNLOAD_DIR
-
-    # try:
-    #     # if attach_mode:
-    #     #     # Start real browser and attach to it.
-    #     #     # We don't use 'headless' mode, because sites recognize this and ask to resolve captchas, etc.
-    #     #     # To display its UI browser, uses virtual display server: xvfb
-    #     #     browser = subprocess.Popen(
-    #     #         BROWSER_START_SCRIPT,
-    #     #         stdout=subprocess.PIPE,
-    #     #         preexec_fn=os.setsid,
-    #     #         shell=True
-    #     #     )
-    #     #
-    #     #     # wait some time until browser is started
-    #     #     sleep(2)
-    #
-    #     # options.add_argument('window-size=1200x600')
-    #     # options.add_argument('disable-gpu')
-    #     # options.add_argument("remote-debugging-port=9222")
-    #
-    #     if attach_mode:
-    #         # options.add_argument('remote-debugging-address=127.0.0.1:9222')
-    #         options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
-    #     else:
-    #         options.add_argument('no-sandbox')
-    #         options.add_argument('disable-dev-shm-usage')
-    #
-    #     # start up a chrome
-    #     driver = webdriver.Chrome(
-    #         executable_path=EXECUTABLE_PATH,
-    #         chrome_options=options
-    #     )
-    #
-    #     driver.download_dir = download_dir
-    #     driver.get_screenshot_as_file = _get_screenshot_as_file(driver.get_screenshot_as_file)
-    #
-    #     yield driver
-    #
-    # finally:
-    #     if driver:
-    #         driver.quit()
-    #     if browser:
-    #         os.killpg(os.getpgid(browser.pid), signal.SIGTERM)
+    finally:
+        if driver:
+            driver.quit()
 
 
 
 
 def login(driver):
+    driver.get('http://office.loveme.com/')
     WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="do_ajax"]')))
     signin_button = driver.find_element_by_css_selector('a[class="do_ajax"]')
     signin_button.click()
-    WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((
-        By.CSS_SELECTOR, 'input[id="ajax_office_login_logins_ident"]')))
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[id="ajax_office_login_logins_ident"]'))
+    )
     username = driver.find_element_by_css_selector('input[id="ajax_office_login_logins_ident"]')
-    username.send_keys('Odessaloveme2@Odafa2')
+    username.send_keys(os.getenv('LOGIN', ''))
     password = driver.find_element_by_css_selector('input[id="ajax_office_login_logins_password"]')
-    password.send_keys('Odessaloveme2')
+    password.send_keys(os.getenv('PASSWORD', ''))
     submit = driver.find_element_by_css_selector('button[class="btn"]')
     submit.click()
+    WebDriverWait(driver, TIMEOUT).until(EC.invisibility_of_element_located((By.CSS_SELECTOR, 'button[class="btn"]')))
 
 
 def _cleanup_input_field(input_field):
@@ -115,11 +66,35 @@ def _cleanup_input_field(input_field):
 
 def process_gentleman(driver, url):
     driver.get(url)
+    WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
+
+    attach_photo_button = driver.find_elements_by_css_selector('a[id="choose_photos_attached"]')
+    if attach_photo_button:
+        attach_photo_button[0].click()
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="fk_files[]"]'))
+        )
+        attach_photo_checkboxes = driver.find_elements_by_css_selector('input[name="fk_files[]"]')
+        for attach_photo_checkbox in attach_photo_checkboxes[:2]:
+            try:
+                attach_photo_checkbox.click()
+            except Exception as ex:
+                pass
+
     submit_button = driver.find_element_by_css_selector('button[id="btn_submit"]')
     submit_button.click()
 
 
 def process_gentlemen(driver):
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'h1[class="display_title"]'))
+    )
+
+    error_msg = driver.find_elements_by_css_selector('div[class="error_msg"]')
+    if error_msg and error_msg[0].text == 'Your search returned no results. Please try again using different criteria':
+        # no results -> just return
+        return
+
     send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men"]')
     for send_intro_button in send_intro_buttons:
         gentleman_url = send_intro_button.get_attribute('href')
@@ -133,8 +108,21 @@ def process_gentlemen(driver):
         driver.switch_to_window(driver.window_handles[-1])
 
 
-def process_lady(driver, lady_id):
+def process_lady(driver, lady_id, intro_letter):
+    global RESUME_PARSING_FROM_ID
+    if RESUME_PARSING_FROM_ID:
+        if RESUME_PARSING_FROM_ID == lady_id:
+            RESUME_PARSING_FROM_ID = ''
+        else:
+            return
+
+    current_time = datetime.datetime.now().strftime('%H:%M:%S')
+    print(f'{current_time}:     Started parsing lady with id={lady_id}')
     driver.get(f'http://office.loveme.com/search_men_office/?women_id={lady_id}')
+
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="reg_date_from"]'))
+    )
 
     reg_date_from = driver.find_element_by_css_selector('input[name="reg_date_from"]')
     reg_date_to = driver.find_element_by_css_selector('input[name="reg_date_to"]')
@@ -142,6 +130,7 @@ def process_lady(driver, lady_id):
     last_login_to = driver.find_element_by_css_selector('input[name="date_to"]')
 
     countries = driver.find_element_by_css_selector('select[id="fk_countries"]')
+    time.sleep(2)
     countries.send_keys('United States')
 
     age_from = driver.find_element_by_css_selector('select[name="age_from"]')
@@ -165,6 +154,14 @@ def process_lady(driver, lady_id):
     _cleanup_input_field(last_login_to)
     last_login_to.send_keys(current_datetime.date().strftime('%Y-%m-%d'))
 
+    intro_types = driver.find_element_by_css_selector('select[name="intro_type"]')
+    intro_types_options = intro_types.find_elements_by_css_selector('option')
+
+    for intro_types_option in intro_types_options:
+        if intro_types_option.text == intro_letter:
+            intro_types_option.click()
+            break
+
     submit = driver.find_element_by_css_selector('button[class="btn"]')
     submit.click()
 
@@ -180,32 +177,50 @@ def process_lady(driver, lady_id):
 
 
 def process_ladies(driver):
+
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="default_photo link_options search_men_office"]'))
+    )
     send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men_office"]')
-    for send_intro_button in send_intro_buttons:
+
+    for send_intro_button in send_intro_buttons[:]:
         lady_id = send_intro_button.get_attribute('id')
 
         driver.execute_script('window.open()')
         driver.switch_to_window(driver.window_handles[-1])
 
-        process_lady(driver, lady_id)
+        for intro_letter in [
+            # 'Send Fourth intro letter',
+            'Send Third intro letter',
+            'Send Second intro letter',
+            'Send First intro letter',
+        ]:
+            process_lady(driver, lady_id, intro_letter)
 
         driver.close()
         driver.switch_to_window(driver.window_handles[-1])
 
-        print()
 
-def main():
-    driver = create_driver()
-    driver.get('http://office.loveme.com/')
-
-    login(driver)
-
+def run_parsing(driver):
     driver.get('http://office.loveme.com/ppl')
 
     process_ladies(driver)
 
+    pages = driver.find_elements_by_css_selector('a[class="navigation_on"]')
+    if pages:
+        page_urls = [page.get_attribute('href') for page in pages[:-1]]
+        for page_url in page_urls:
+            driver.get(page_url)
+            process_ladies(driver)
 
-    print()
+
+def main():
+    with create_driver() as driver:
+
+        login(driver)
+
+        run_parsing(driver)
+
 
 if __name__ == "__main__":
     main()
