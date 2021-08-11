@@ -4,15 +4,24 @@ import time
 from contextlib import contextmanager
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 TIMEOUT = 16
-CHROME_DRIVER_PATH = '/usr/lib/chromium-browser/chromedriver'
+CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
+BASE_URL = os.getenv('BASE_URL')
 RESUME_PARSING_FROM_ID = ''
+
+
+class EmptyIntroLetterException(Exception):
+    pass
+
+
+def log(msg):
+    current_time = datetime.datetime.now().strftime('%H:%M:%S')
+    print(f'{current_time}:     {msg}')
 
 # ----------------------------------------------------------------------------------------------------------------------
 @contextmanager
@@ -32,7 +41,7 @@ def create_driver(attach_mode=True, download_dir=None):
         options.add_argument('no-sandbox')
         options.add_argument('disable-dev-shm-usage')
 
-        driver = webdriver.Chrome(executable_path=CHROME_DRIVER_PATH, chrome_options=options)
+        driver = webdriver.Chrome(executable_path=CHROME_DRIVER_PATH, options=options)
 
         yield driver
 
@@ -41,10 +50,8 @@ def create_driver(attach_mode=True, download_dir=None):
             driver.quit()
 
 
-
-
 def login(driver):
-    driver.get('http://office.loveme.com/')
+    driver.get(BASE_URL)
     WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="do_ajax"]')))
     signin_button = driver.find_element_by_css_selector('a[class="do_ajax"]')
     signin_button.click()
@@ -67,6 +74,11 @@ def _cleanup_input_field(input_field):
 def process_gentleman(driver, url):
     driver.get(url)
     WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
+
+    subject = driver.find_element_by_css_selector('input[id="mbox_subject"]').get_attribute('value')
+    message = driver.find_element_by_css_selector('textarea[id="mbox_body"]').get_attribute('value')
+    if not subject and not message:
+        raise EmptyIntroLetterException()
 
     attach_photo_button = driver.find_elements_by_css_selector('a[id="choose_photos_attached"]')
     if attach_photo_button:
@@ -100,12 +112,15 @@ def process_gentlemen(driver):
         gentleman_url = send_intro_button.get_attribute('href')
 
         driver.execute_script('window.open()')
-        driver.switch_to_window(driver.window_handles[-1])
+        driver.switch_to.window(driver.window_handles[-1])
 
-        process_gentleman(driver, gentleman_url)
-
-        driver.close()
-        driver.switch_to_window(driver.window_handles[-1])
+        try:
+            process_gentleman(driver, gentleman_url)
+        except EmptyIntroLetterException:
+            raise
+        finally:
+            driver.close()
+            driver.switch_to_window(driver.window_handles[-1])
 
 
 def process_lady(driver, lady_id, intro_letter):
@@ -116,9 +131,8 @@ def process_lady(driver, lady_id, intro_letter):
         else:
             return
 
-    current_time = datetime.datetime.now().strftime('%H:%M:%S')
-    print(f'{current_time}:     Started parsing lady with id={lady_id}')
-    driver.get(f'http://office.loveme.com/search_men_office/?women_id={lady_id}')
+    log(f'Started processing lady with id={lady_id}, \'{intro_letter}\'')
+    driver.get(f'{BASE_URL}/search_men_office/?women_id={lady_id}')
 
     WebDriverWait(driver, TIMEOUT).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="reg_date_from"]'))
@@ -187,22 +201,25 @@ def process_ladies(driver):
         lady_id = send_intro_button.get_attribute('id')
 
         driver.execute_script('window.open()')
-        driver.switch_to_window(driver.window_handles[-1])
+        driver.switch_to.window(driver.window_handles[-1])
 
         for intro_letter in [
-            # 'Send Fourth intro letter',
+            'Send Fourth intro letter',
             'Send Third intro letter',
             'Send Second intro letter',
             'Send First intro letter',
         ]:
-            process_lady(driver, lady_id, intro_letter)
+            try:
+                process_lady(driver, lady_id, intro_letter)
+            except EmptyIntroLetterException:
+                log(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
 
         driver.close()
-        driver.switch_to_window(driver.window_handles[-1])
+        driver.switch_to.window(driver.window_handles[-1])
 
 
 def run_parsing(driver):
-    driver.get('http://office.loveme.com/ppl')
+    driver.get(f'{BASE_URL}/ppl')
 
     process_ladies(driver)
 
@@ -220,6 +237,9 @@ def main():
         login(driver)
 
         run_parsing(driver)
+
+        log('')
+        log('SUCCESSFULLY FINISHED!')
 
 
 if __name__ == "__main__":
