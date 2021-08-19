@@ -1,7 +1,11 @@
+import logging
+
 import datetime
+import itertools
 import os
 import time
 from contextlib import contextmanager
+from dotenv import load_dotenv
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -14,14 +18,26 @@ CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
 BASE_URL = os.getenv('BASE_URL')
 RESUME_PARSING_FROM_ID = ''
 
+log_file = "./logfile.log"
+log_level = logging.INFO
+logging.basicConfig(
+    level=log_level, filename=log_file, filemode="w+", format="%(asctime)-15s %(levelname)-8s %(message)s"
+)
+logger = logging.getLogger("date_parser")
+
+load_dotenv()
 
 class EmptyIntroLetterException(Exception):
     pass
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def log(msg):
     current_time = datetime.datetime.now().strftime('%H:%M:%S')
-    print(f'{current_time}:     {msg}')
+    msg = f'{current_time}:     {msg}'
+    print(msg)
+    logger.info(msg)
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 @contextmanager
@@ -73,6 +89,11 @@ def _cleanup_input_field(input_field):
 
 def process_gentleman(driver, url):
     driver.get(url)
+
+    # TODO:
+    # here we can add handling of Limit exceeding error:
+    # subject = driver.find_element_by_css_selector('div[id="msg_max_intros_reached"]')
+
     WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
 
     subject = driver.find_element_by_css_selector('input[id="mbox_subject"]').get_attribute('value')
@@ -105,6 +126,7 @@ def process_gentlemen(driver):
     error_msg = driver.find_elements_by_css_selector('div[class="error_msg"]')
     if error_msg and error_msg[0].text == 'Your search returned no results. Please try again using different criteria':
         # no results -> just return
+        log(f'No results for given search criteria -> proceed with another letter, if any')
         return
 
     send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men"]')
@@ -120,10 +142,10 @@ def process_gentlemen(driver):
             raise
         finally:
             driver.close()
-            driver.switch_to_window(driver.window_handles[-1])
+            driver.switch_to.window(driver.window_handles[-1])
 
 
-def process_lady(driver, lady_id, intro_letter):
+def process_lady(driver, lady_id, country, intro_letter):
     global RESUME_PARSING_FROM_ID
     if RESUME_PARSING_FROM_ID:
         if RESUME_PARSING_FROM_ID == lady_id:
@@ -145,7 +167,7 @@ def process_lady(driver, lady_id, intro_letter):
 
     countries = driver.find_element_by_css_selector('select[id="fk_countries"]')
     time.sleep(2)
-    countries.send_keys('United States')
+    countries.send_keys(country)
 
     age_from = driver.find_element_by_css_selector('select[name="age_from"]')
     lady_age = driver.find_elements_by_css_selector('p[class="small gray"]')[1].text.split(', ')[0]
@@ -203,14 +225,17 @@ def process_ladies(driver):
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
 
-        for intro_letter in [
+        countries = ['United States', 'Canada', 'Australia', 'United Kingdom']
+        letters = [
             'Send Fourth intro letter',
             'Send Third intro letter',
             'Send Second intro letter',
             'Send First intro letter',
-        ]:
+        ]
+
+        for country, intro_letter in itertools.product(countries, letters):
             try:
-                process_lady(driver, lady_id, intro_letter)
+                process_lady(driver, lady_id, country, intro_letter)
             except EmptyIntroLetterException:
                 log(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
 
@@ -219,6 +244,9 @@ def process_ladies(driver):
 
 
 def run_parsing(driver):
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'h1[class="display_title"]'))
+    )
     driver.get(f'{BASE_URL}/ppl')
 
     process_ladies(driver)
@@ -234,12 +262,17 @@ def run_parsing(driver):
 def main():
     with create_driver() as driver:
 
-        login(driver)
+        try:
+            login(driver)
 
-        run_parsing(driver)
+            run_parsing(driver)
 
-        log('')
-        log('SUCCESSFULLY FINISHED!')
+            log('')
+            log('SUCCESSFULLY FINISHED!')
+        except Exception as ex:
+            log(f'FINISHED WITH ERROR: {repr(ex)}')
+        finally:
+            pass
 
 
 if __name__ == "__main__":
