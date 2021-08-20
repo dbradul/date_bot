@@ -1,5 +1,3 @@
-import logging
-
 import datetime
 import itertools
 import os
@@ -12,31 +10,36 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+
+from utils import logger, call_retrier, dump_exception_stack
+
+load_dotenv()
 
 TIMEOUT = 16
 CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
 BASE_URL = os.getenv('BASE_URL')
 RESUME_PARSING_FROM_ID = ''
 
-log_file = "./logfile.log"
-log_level = logging.INFO
-logging.basicConfig(
-    level=log_level, filename=log_file, filemode="w+", format="%(asctime)-15s %(levelname)-8s %(message)s"
-)
-logger = logging.getLogger("date_parser")
-
-load_dotenv()
-
-class EmptyIntroLetterException(Exception):
-    pass
+AGE_RANGE_MAP = {
+    (18, 29): 15,
+    (30, 39): 10,
+    (40, 49): 5,
+    (50, float('inf')): 0,
+}
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-def log(msg):
-    current_time = datetime.datetime.now().strftime('%H:%M:%S')
-    msg = f'{current_time}:     {msg}'
-    print(msg)
-    logger.info(msg)
+def get_delta_from_age_range(age):
+    for (range_from, rage_to), delta in AGE_RANGE_MAP.items():
+        if range_from <= age <= rage_to:
+            return delta
+    return 0
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+class EmptyIntroLetterException(Exception):
+    pass
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -126,7 +129,7 @@ def process_gentlemen(driver):
     error_msg = driver.find_elements_by_css_selector('div[class="error_msg"]')
     if error_msg and error_msg[0].text == 'Your search returned no results. Please try again using different criteria':
         # no results -> just return
-        log(f'No results for given search criteria -> proceed with another letter, if any')
+        logger.info(f'No results for given search criteria -> proceed with another letter, if any')
         return
 
     send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men"]')
@@ -153,7 +156,7 @@ def process_lady(driver, lady_id, country, intro_letter):
         else:
             return
 
-    log(f'Started processing lady with id={lady_id}, \'{intro_letter}\'')
+    logger.info(f'Started processing lady with id={lady_id}, \'{intro_letter}\'')
     driver.get(f'{BASE_URL}/search_men_office/?women_id={lady_id}')
 
     WebDriverWait(driver, TIMEOUT).until(
@@ -166,15 +169,15 @@ def process_lady(driver, lady_id, country, intro_letter):
     last_login_to = driver.find_element_by_css_selector('input[name="date_to"]')
 
     countries = driver.find_element_by_css_selector('select[id="fk_countries"]')
-    time.sleep(2)
+    time.sleep(1)  # dropdown list is populated in deferred way
     countries.send_keys(country)
 
     age_from = driver.find_element_by_css_selector('select[name="age_from"]')
     lady_age = driver.find_elements_by_css_selector('p[class="small gray"]')[1].text.split(', ')[0]
-    gentelman_age_from = int(lady_age) + 20
+    gentleman_age_from = int(lady_age) + get_delta_from_age_range(int(lady_age))
     age_from_options = age_from.find_elements_by_css_selector('option')
     for age_from_option in age_from_options[1:]:
-        if int(age_from_option.text) == gentelman_age_from:
+        if int(age_from_option.text) == gentleman_age_from:
             age_from_option.click()
             break
     age_to = driver.find_element_by_css_selector('select[name="age_to"]')
@@ -213,13 +216,12 @@ def process_lady(driver, lady_id, country, intro_letter):
 
 
 def process_ladies(driver):
-
     WebDriverWait(driver, TIMEOUT).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="default_photo link_options search_men_office"]'))
     )
     send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men_office"]')
 
-    for send_intro_button in send_intro_buttons[:]:
+    for send_intro_button in send_intro_buttons:
         lady_id = send_intro_button.get_attribute('id')
 
         driver.execute_script('window.open()')
@@ -237,12 +239,13 @@ def process_ladies(driver):
             try:
                 process_lady(driver, lady_id, country, intro_letter)
             except EmptyIntroLetterException:
-                log(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
+                logger.info(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
 
         driver.close()
         driver.switch_to.window(driver.window_handles[-1])
 
 
+# @call_retrier(max_retry_num=3, catched_exceptions=(TimeoutException,))
 def run_parsing(driver):
     WebDriverWait(driver, TIMEOUT).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'h1[class="display_title"]'))
@@ -263,16 +266,16 @@ def main():
     with create_driver() as driver:
 
         try:
+            logger.info('STARTED NEW BOT RUN')
             login(driver)
 
             run_parsing(driver)
 
-            log('')
-            log('SUCCESSFULLY FINISHED!')
+            logger.info('')
+            logger.info('SUCCESSFULLY FINISHED!')
         except Exception as ex:
-            log(f'FINISHED WITH ERROR: {repr(ex)}')
-        finally:
-            pass
+            logger.error(f'FINISHED WITH ERROR: {repr(ex)}')
+            dump_exception_stack(ex)
 
 
 if __name__ == "__main__":
