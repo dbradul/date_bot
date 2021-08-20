@@ -246,10 +246,9 @@ def process_ladies(driver):
 
 # @call_retrier(max_retry_num=3, catched_exceptions=(TimeoutException,))
 def run_parsing(driver):
-    WebDriverWait(driver, TIMEOUT).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, 'h1[class="display_title"]'))
-    )
-    driver.get(f'{BASE_URL}/ppl')
+    WebDriverWait(driver, TIMEOUT).until(EC.element_to_be_clickable((By.XPATH, "//a[text()='Correspondence']")))
+    ppl_button = driver.find_element(By.XPATH, "//a[text()='Correspondence']")
+    ppl_button.click()
 
     process_ladies(driver)
 
