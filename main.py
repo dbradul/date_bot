@@ -168,8 +168,11 @@ def process_lady(driver, lady_id, country, intro_letter):
     last_login_from = driver.find_element_by_css_selector('input[name="date_from"]')
     last_login_to = driver.find_element_by_css_selector('input[name="date_to"]')
 
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'select[id="fk_countries"]'))
+    )
     countries = driver.find_element_by_css_selector('select[id="fk_countries"]')
-    time.sleep(1)  # dropdown list is populated in deferred way
+    time.sleep(2)  # dropdown list is populated in deferred way
     countries.send_keys(country)
 
     age_from = driver.find_element_by_css_selector('select[name="age_from"]')
