@@ -168,9 +168,7 @@ def process_lady(driver, lady_id, country, intro_letter):
     last_login_from = driver.find_element_by_css_selector('input[name="date_from"]')
     last_login_to = driver.find_element_by_css_selector('input[name="date_to"]')
 
-    WebDriverWait(driver, TIMEOUT).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, 'select[id="fk_countries"]'))
-    )
+    # TODO: Replace with Wait-method
     countries = driver.find_element_by_css_selector('select[id="fk_countries"]')
     time.sleep(2)  # dropdown list is populated in deferred way
     countries.send_keys(country)
@@ -224,25 +222,23 @@ def process_ladies(driver):
     )
     send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men_office"]')
 
-    for send_intro_button in send_intro_buttons:
-        lady_id = send_intro_button.get_attribute('id')
+    lady_ids = [send_intro_button.get_attribute('id') for send_intro_button in send_intro_buttons]
+    countries = ['United States', 'Canada', 'Australia', 'United Kingdom']
+    letters = [
+        'Send Fourth intro letter',
+        'Send Third intro letter',
+        'Send Second intro letter',
+        'Send First intro letter',
+    ]
 
+    for country, lady_id, intro_letter in itertools.product(countries, lady_ids, letters):
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
 
-        countries = ['United States', 'Canada', 'Australia', 'United Kingdom']
-        letters = [
-            'Send Fourth intro letter',
-            'Send Third intro letter',
-            'Send Second intro letter',
-            'Send First intro letter',
-        ]
-
-        for country, intro_letter in itertools.product(countries, letters):
-            try:
-                process_lady(driver, lady_id, country, intro_letter)
-            except EmptyIntroLetterException:
-                logger.info(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
+        try:
+            process_lady(driver, lady_id, country, intro_letter)
+        except EmptyIntroLetterException:
+            logger.info(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
 
         driver.close()
         driver.switch_to.window(driver.window_handles[-1])
