@@ -1,8 +1,11 @@
 import time
 import traceback
 import sys
+import os
 import functools
 import logging
+
+from datetime import datetime as dt
 
 # ----------------------------------------------------------------------------------------------------------------------
 log_file = "./logfile.log"
@@ -73,3 +76,20 @@ def dump_exception_stack(ex):
     exc_info = sys.exc_info()
     for line in traceback.format_exception(*exc_info):
         logger.error(line)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+class Screener:
+    screenshots_queue = []
+    base_dir = './screenshots/'
+
+    @classmethod
+    def push_screen(cls, driver):
+        path = f"{cls.base_dir}{dt.now().strftime('%Y-%m-%d_%H%M%S')}.png"
+        driver.get_screenshot_as_file(path)
+        cls.screenshots_queue.append(path)
+
+    @classmethod
+    def pop_screen(cls):
+        path = cls.screenshots_queue.pop()
+        os.remove(path)

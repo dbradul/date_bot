@@ -12,7 +12,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-from utils import logger, call_retrier, dump_exception_stack
+from utils import logger, call_retrier, dump_exception_stack, Screener
 
 load_dotenv()
 
@@ -39,6 +39,11 @@ def get_delta_from_age_range(age):
 
 # ----------------------------------------------------------------------------------------------------------------------
 class EmptyIntroLetterException(Exception):
+    pass
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+class LimitIsExceededException(Exception):
     pass
 
 
@@ -93,11 +98,17 @@ def _cleanup_input_field(input_field):
 def process_gentleman(driver, url):
     driver.get(url)
 
-    # TODO:
-    # here we can add handling of Limit exceeding error:
-    # subject = driver.find_element_by_css_selector('div[id="msg_max_intros_reached"]')
-
-    WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
+    try:
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]'))
+        )
+    except TimeoutException:
+        # here we can do additional check if Limit exceeding error occured
+        limit_exceeded = driver.find_elements_by_css_selector('div[id="msg_max_intros_reached"]')
+        if limit_exceeded:
+            raise LimitIsExceededException(limit_exceeded[0].text)
+        else:
+            raise
 
     subject = driver.find_element_by_css_selector('input[id="mbox_subject"]').get_attribute('value')
     message = driver.find_element_by_css_selector('textarea[id="mbox_body"]').get_attribute('value')
@@ -141,9 +152,8 @@ def process_gentlemen(driver):
 
         try:
             process_gentleman(driver, gentleman_url)
-        except EmptyIntroLetterException:
-            raise
         finally:
+            Screener.push_screen(driver)
             driver.close()
             driver.switch_to.window(driver.window_handles[-1])
 
@@ -156,7 +166,7 @@ def process_lady(driver, lady_id, country, intro_letter):
         else:
             return
 
-    logger.info(f'Started processing lady with id={lady_id}, \'{intro_letter}\'')
+    logger.info(f'Started processing lady with id={lady_id}, country={country}, letter=\'{intro_letter}\'')
     driver.get(f'{BASE_URL}/search_men_office/?women_id={lady_id}')
 
     WebDriverWait(driver, TIMEOUT).until(
@@ -239,6 +249,7 @@ def process_ladies(driver):
             process_lady(driver, lady_id, country, intro_letter)
         except EmptyIntroLetterException:
             logger.info(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
+            Screener.pop_screen()
 
         driver.close()
         driver.switch_to.window(driver.window_handles[-1])
@@ -271,9 +282,12 @@ def main():
 
             logger.info('')
             logger.info('SUCCESSFULLY FINISHED!')
+        except LimitIsExceededException as ex:
+            logger.error(f'LIMIT EXCEEDING ERROR: {repr(ex)}')
         except Exception as ex:
             logger.error(f'FINISHED WITH ERROR: {repr(ex)}')
             dump_exception_stack(ex)
+            Screener.push_screen(driver)
 
 
 if __name__ == "__main__":
