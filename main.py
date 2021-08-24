@@ -1,3 +1,5 @@
+import re
+
 import datetime
 import itertools
 import os
@@ -20,6 +22,9 @@ TIMEOUT = 16
 CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
 BASE_URL = os.getenv('BASE_URL')
 RESUME_PARSING_FROM_ID = ''
+BLACK_LIST_LADIES = [128289, 191124]
+
+GENTLEMAN_PROFILE_INFO_MAP = {}
 
 AGE_RANGE_MAP = {
     (18, 29): 15,
@@ -122,7 +127,7 @@ def process_gentleman(driver, url):
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="fk_files[]"]'))
         )
         attach_photo_checkboxes = driver.find_elements_by_css_selector('input[name="fk_files[]"]')
-        for attach_photo_checkbox in attach_photo_checkboxes[:2]:
+        for attach_photo_checkbox in attach_photo_checkboxes[:4]:
             try:
                 attach_photo_checkbox.click()
             except Exception as ex:
@@ -132,19 +137,71 @@ def process_gentleman(driver, url):
     submit_button.click()
 
 
+def fetch_gentleman_profile_info(profile_link, driver):
+    if profile_link not in GENTLEMAN_PROFILE_INFO_MAP:
+        driver.execute_script('window.open()')
+        driver.switch_to.window(driver.window_handles[-1])
+        driver.get(profile_link)
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.element_to_be_clickable((By.XPATH, "//span[text()='I am interested in ladies between:']"))
+        )
+        info_text = (
+            driver.find_element(By.XPATH, "//span[text()='I am interested in ladies between:']")
+            .find_element_by_xpath('..')
+            .text.replace('\n', '')
+        )
+        patterns = [
+            '.* (\d+) - (\d+)',
+            '.* -- - (\d+)',
+        ]
+
+        profile_info = {}
+        for pattern in patterns:
+            m = re.match(pattern, info_text)
+            if m:
+                profile_info = {
+                    'age_from': int(m.groups()[0] if len(m.groups()) == 2 else 0),
+                    'age_to': int(m.groups()[1] if len(m.groups()) == 2 else m.groups()[0]),
+                }
+                break
+
+        GENTLEMAN_PROFILE_INFO_MAP[profile_link] = profile_info
+
+        driver.close()
+        driver.switch_to.window(driver.window_handles[-1])
+
+    return GENTLEMAN_PROFILE_INFO_MAP[profile_link]
+
+
 def process_gentlemen(driver):
     WebDriverWait(driver, TIMEOUT).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'h1[class="display_title"]'))
     )
 
     error_msg = driver.find_elements_by_css_selector('div[class="error_msg"]')
+
+    lady_info = [
+        e.text for e in driver.find_elements_by_css_selector('p[class="small gray"]') if e.text.endswith('Ukraine')
+    ]
+    lady_age = int(lady_info[0].split(', ')[0])
+
     if error_msg and error_msg[0].text == 'Your search returned no results. Please try again using different criteria':
         # no results -> just return
         logger.info(f'No results for given search criteria -> proceed with another letter, if any')
         return
 
+    profile_links = [e.get_attribute('href') for e in driver.find_elements_by_css_selector('a[target="_blank"]')]
     send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men"]')
-    for send_intro_button in send_intro_buttons:
+    for profile_link, send_intro_button in zip(profile_links[2:][::2], send_intro_buttons):
+        profile_info = fetch_gentleman_profile_info(profile_link, driver)
+        if profile_info:
+            matched_age = profile_info['age_from'] <= lady_age <= profile_info['age_to']
+            if not matched_age:
+                logger.info(
+                    f'Not matched age -> skipped. Lady link = {profile_links[0]}, gentleman link = {profile_link}'
+                )
+                continue
+
         gentleman_url = send_intro_button.get_attribute('href')
 
         driver.execute_script('window.open()')
@@ -226,13 +283,7 @@ def process_lady(driver, lady_id, country, intro_letter):
             process_gentlemen(driver)
 
 
-def process_ladies(driver):
-    WebDriverWait(driver, TIMEOUT).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="default_photo link_options search_men_office"]'))
-    )
-    send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men_office"]')
-
-    lady_ids = [send_intro_button.get_attribute('id') for send_intro_button in send_intro_buttons]
+def process_ladies(driver, lady_ids):
     countries = ['United States', 'Canada', 'Australia', 'United Kingdom']
     letters = [
         'Send Fourth intro letter',
@@ -246,7 +297,8 @@ def process_ladies(driver):
         driver.switch_to.window(driver.window_handles[-1])
 
         try:
-            process_lady(driver, lady_id, country, intro_letter)
+            if lady_id not in BLACK_LIST_LADIES:
+                process_lady(driver, lady_id, country, intro_letter)
         except EmptyIntroLetterException:
             logger.info(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
             Screener.pop_screen()
@@ -261,14 +313,28 @@ def run_parsing(driver):
     ppl_button = driver.find_element(By.XPATH, "//a[text()='Correspondence']")
     ppl_button.click()
 
-    process_ladies(driver)
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="default_photo link_options search_men_office"]'))
+    )
+    send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men_office"]')
+    lady_ids = [int(send_intro_button.get_attribute('id')) for send_intro_button in send_intro_buttons]
 
     pages = driver.find_elements_by_css_selector('a[class="navigation_on"]')
     if pages:
         page_urls = [page.get_attribute('href') for page in pages[:-1]]
         for page_url in page_urls:
             driver.get(page_url)
-            process_ladies(driver)
+            WebDriverWait(driver, TIMEOUT).until(
+                EC.visibility_of_element_located(
+                    (By.CSS_SELECTOR, 'a[class="default_photo link_options search_men_office"]')
+                )
+            )
+            send_intro_buttons = driver.find_elements_by_css_selector(
+                'a[class="default_photo link_options search_men_office"]'
+            )
+            lady_ids += [int(send_intro_button.get_attribute('id')) for send_intro_button in send_intro_buttons]
+
+    process_ladies(driver, lady_ids)
 
 
 def main():
@@ -285,7 +351,7 @@ def main():
         except LimitIsExceededException as ex:
             logger.error(f'LIMIT EXCEEDING ERROR: {repr(ex)}')
         except Exception as ex:
-            logger.error(f'FINISHED WITH ERROR: {repr(ex)}')
+            logger.error(f'FINISHED WITH UNEXPECTED ERROR: {repr(ex)}')
             dump_exception_stack(ex)
             Screener.push_screen(driver)
 
