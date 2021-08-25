@@ -14,6 +14,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
+from db import get_gentleman_info
 from utils import logger, call_retrier, dump_exception_stack, Screener
 
 load_dotenv()
@@ -21,7 +22,7 @@ load_dotenv()
 TIMEOUT = 16
 CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
 BASE_URL = os.getenv('BASE_URL')
-RESUME_PARSING_FROM_ID = ''
+RESUME_PARSING_FROM_ID = 0
 BLACK_LIST_LADIES = [128289, 191124]
 
 GENTLEMAN_PROFILE_INFO_MAP = {}
@@ -79,6 +80,7 @@ def create_driver(attach_mode=True, download_dir=None):
             driver.quit()
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def login(driver):
     driver.get(BASE_URL)
     WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="do_ajax"]')))
@@ -96,10 +98,12 @@ def login(driver):
     WebDriverWait(driver, TIMEOUT).until(EC.invisibility_of_element_located((By.CSS_SELECTOR, 'button[class="btn"]')))
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def _cleanup_input_field(input_field):
     _ = [input_field.send_keys(Keys.BACKSPACE) for _ in range(10)]
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def process_gentleman(driver, url):
     driver.get(url)
 
@@ -137,6 +141,7 @@ def process_gentleman(driver, url):
     submit_button.click()
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def fetch_gentleman_profile_info(profile_link, driver):
     if profile_link not in GENTLEMAN_PROFILE_INFO_MAP:
         driver.execute_script('window.open()')
@@ -159,9 +164,10 @@ def fetch_gentleman_profile_info(profile_link, driver):
         for pattern in patterns:
             m = re.match(pattern, info_text)
             if m:
+                age_from, age_to = m.groups() if len(m.groups()) == 2 else [0, m.groups()[0]]
                 profile_info = {
-                    'age_from': int(m.groups()[0] if len(m.groups()) == 2 else 0),
-                    'age_to': int(m.groups()[1] if len(m.groups()) == 2 else m.groups()[0]),
+                    'age_from': int(age_from),
+                    'age_to': int(age_to),
                 }
                 break
 
@@ -173,6 +179,7 @@ def fetch_gentleman_profile_info(profile_link, driver):
     return GENTLEMAN_PROFILE_INFO_MAP[profile_link]
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def process_gentlemen(driver):
     WebDriverWait(driver, TIMEOUT).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'h1[class="display_title"]'))
@@ -209,12 +216,15 @@ def process_gentlemen(driver):
 
         try:
             process_gentleman(driver, gentleman_url)
-        finally:
+        except:
             Screener.push_screen(driver)
+            raise
+        finally:
             driver.close()
             driver.switch_to.window(driver.window_handles[-1])
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def process_lady(driver, lady_id, country, intro_letter):
     global RESUME_PARSING_FROM_ID
     if RESUME_PARSING_FROM_ID:
@@ -283,6 +293,7 @@ def process_lady(driver, lady_id, country, intro_letter):
             process_gentlemen(driver)
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def process_ladies(driver, lady_ids):
     countries = ['United States', 'Canada', 'Australia', 'United Kingdom']
     letters = [
@@ -307,8 +318,12 @@ def process_ladies(driver, lady_ids):
         driver.switch_to.window(driver.window_handles[-1])
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 # @call_retrier(max_retry_num=3, catched_exceptions=(TimeoutException,))
 def run_parsing(driver):
+
+    # gentlemen_data = get_gentleman_info()
+
     WebDriverWait(driver, TIMEOUT).until(EC.element_to_be_clickable((By.XPATH, "//a[text()='Correspondence']")))
     ppl_button = driver.find_element(By.XPATH, "//a[text()='Correspondence']")
     ppl_button.click()
@@ -337,6 +352,7 @@ def run_parsing(driver):
     process_ladies(driver, lady_ids)
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def main():
     with create_driver() as driver:
 
@@ -358,4 +374,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
