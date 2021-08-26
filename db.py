@@ -19,21 +19,26 @@ def execute_query(query, args=()):
 def get_gentleman_info():
     query = 'select profile_id, age_from, age_to from gentleman_info;'
     records = execute_query(query)
-    return [GentlemanInfo(**record) for record in records]
+    return {record['profile_id']: GentlemanInfo(**record) for record in records}
 
 
-def put_gentleman_info(gentleman_infos):
-    for gentleman_info in gentleman_infos:
-        query = 'insert into gentleman_info (profile_id, age_from, age_to) values (?, ?, ?);'
-        records = execute_query(query, tuple(gentleman_info.values()))
-    # return [GentlemanInfo(**record) for record in records]
+def get_gentleman_info_by_profile_id(profile_id):
+    query = 'select profile_id, age_from, age_to from gentleman_info where profile_id=?;'
+    records = execute_query(query, (profile_id,))
+    return GentlemanInfo(**records[0]) if records else None
 
 
-result = get_gentleman_info()
-put_gentleman_info(
-    [
-        {'profile_id': 4445, 'age_from': 25, 'age_to': 50},
-        {'profile_id': 4443, 'age_from': 19, 'age_to': 91},
-    ]
-)
-print(result)
+def put_gentleman_info(gentleman_info):
+    query = 'insert into gentleman_info (profile_id, age_from, age_to) values (?, ?, ?);'
+    execute_query(query, tuple(gentleman_info.dict().values()))
+
+
+#
+# result = get_gentleman_info()
+# put_gentleman_info(
+#     [
+#         {'profile_id': 4445, 'age_from': 25, 'age_to': 50},
+#         {'profile_id': 4443, 'age_from': 19, 'age_to': 91},
+#     ]
+# )
+# print(result)

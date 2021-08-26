@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import re
 
 import datetime
@@ -14,7 +16,8 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-from db import get_gentleman_info
+from db import get_gentleman_info, get_gentleman_info_by_profile_id, put_gentleman_info
+from models import GentlemanInfo
 from utils import logger, call_retrier, dump_exception_stack, Screener
 
 load_dotenv()
@@ -142,8 +145,12 @@ def process_gentleman(driver, url):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
+@lru_cache()
 def fetch_gentleman_profile_info(profile_link, driver):
-    if profile_link not in GENTLEMAN_PROFILE_INFO_MAP:
+    profile_id = int(profile_link.split('=')[1])
+    gentleman_info = get_gentleman_info_by_profile_id(profile_id)
+
+    if not gentleman_info:
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
         driver.get(profile_link)
@@ -160,23 +167,23 @@ def fetch_gentleman_profile_info(profile_link, driver):
             '.* -- - (\d+)',
         ]
 
-        profile_info = {}
+        gentleman_info = GentlemanInfo(
+            profile_id=profile_id,
+        )
         for pattern in patterns:
             m = re.match(pattern, info_text)
             if m:
                 age_from, age_to = m.groups() if len(m.groups()) == 2 else [0, m.groups()[0]]
-                profile_info = {
-                    'age_from': int(age_from),
-                    'age_to': int(age_to),
-                }
+                gentleman_info.age_from = int(age_from)
+                gentleman_info.age_to = int(age_to)
                 break
 
-        GENTLEMAN_PROFILE_INFO_MAP[profile_link] = profile_info
+        put_gentleman_info(gentleman_info)
 
         driver.close()
         driver.switch_to.window(driver.window_handles[-1])
 
-    return GENTLEMAN_PROFILE_INFO_MAP[profile_link]
+    return gentleman_info
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -201,8 +208,8 @@ def process_gentlemen(driver):
     send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men"]')
     for profile_link, send_intro_button in zip(profile_links[2:][::2], send_intro_buttons):
         profile_info = fetch_gentleman_profile_info(profile_link, driver)
-        if profile_info:
-            matched_age = profile_info['age_from'] <= lady_age <= profile_info['age_to']
+        if profile_info.age_to:
+            matched_age = profile_info.age_from <= lady_age <= profile_info.age_to
             if not matched_age:
                 logger.info(
                     f'Not matched age -> skipped. Lady link = {profile_links[0]}, gentleman link = {profile_link}'
@@ -295,6 +302,7 @@ def process_lady(driver, lady_id, country, intro_letter):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def process_ladies(driver, lady_ids):
+    filtered_lady_ids = filter(lambda l: l not in BLACK_LIST_LADIES, lady_ids)
     countries = ['United States', 'Canada', 'Australia', 'United Kingdom']
     letters = [
         'Send Fourth intro letter',
@@ -303,13 +311,12 @@ def process_ladies(driver, lady_ids):
         'Send First intro letter',
     ]
 
-    for country, lady_id, intro_letter in itertools.product(countries, lady_ids, letters):
+    for country, lady_id, intro_letter in itertools.product(countries, filtered_lady_ids, letters):
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
 
         try:
-            if lady_id not in BLACK_LIST_LADIES:
-                process_lady(driver, lady_id, country, intro_letter)
+            process_lady(driver, lady_id, country, intro_letter)
         except EmptyIntroLetterException:
             logger.info(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
             Screener.pop_screen()
@@ -321,9 +328,6 @@ def process_ladies(driver, lady_ids):
 # ----------------------------------------------------------------------------------------------------------------------
 # @call_retrier(max_retry_num=3, catched_exceptions=(TimeoutException,))
 def run_parsing(driver):
-
-    # gentlemen_data = get_gentleman_info()
-
     WebDriverWait(driver, TIMEOUT).until(EC.element_to_be_clickable((By.XPATH, "//a[text()='Correspondence']")))
     ppl_button = driver.find_element(By.XPATH, "//a[text()='Correspondence']")
     ppl_button.click()
