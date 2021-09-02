@@ -232,7 +232,7 @@ def process_gentlemen(driver):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-def process_lady(driver, lady_id, country, intro_letter):
+def process_lady(driver, lady_id, online_status, country, intro_letter):
     global RESUME_PARSING_FROM_ID
     if RESUME_PARSING_FROM_ID:
         if RESUME_PARSING_FROM_ID == lady_id:
@@ -247,6 +247,11 @@ def process_lady(driver, lady_id, country, intro_letter):
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="reg_date_from"]'))
     )
 
+    is_online = driver.find_element_by_css_selector('input[id="is_online"]')
+    if is_online.get_attribute('checked') == 'true' and not online_status:
+        is_online.click()
+    elif is_online.get_attribute('checked') is None and online_status:
+        is_online.click()
     reg_date_from = driver.find_element_by_css_selector('input[name="reg_date_from"]')
     reg_date_to = driver.find_element_by_css_selector('input[name="reg_date_to"]')
     last_login_from = driver.find_element_by_css_selector('input[name="date_from"]')
@@ -303,6 +308,7 @@ def process_lady(driver, lady_id, country, intro_letter):
 # ----------------------------------------------------------------------------------------------------------------------
 def process_ladies(driver, lady_ids):
     filtered_lady_ids = filter(lambda l: l not in BLACK_LIST_LADIES, lady_ids)
+    online_statuses = [True, False]
     countries = ['United States', 'Canada', 'Australia', 'United Kingdom']
     letters = [
         'Send Fourth intro letter',
@@ -311,12 +317,14 @@ def process_ladies(driver, lady_ids):
         'Send First intro letter',
     ]
 
-    for country, lady_id, intro_letter in itertools.product(countries, filtered_lady_ids, letters):
+    for online_status, country, lady_id, intro_letter in itertools.product(
+        online_statuses, countries, filtered_lady_ids, letters
+    ):
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
 
         try:
-            process_lady(driver, lady_id, country, intro_letter)
+            process_lady(driver, lady_id, online_status, country, intro_letter)
         except EmptyIntroLetterException:
             logger.info(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
             Screener.pop_screen()

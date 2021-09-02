@@ -9,6 +9,7 @@ env/
 .env
 .idea/*
 .gitattributes
+date.db
 screenshots/
 !screenshots/.gitkeep
 TODO
