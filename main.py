@@ -309,7 +309,7 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
 def process_ladies(driver, lady_ids):
     filtered_lady_ids = filter(lambda l: l not in BLACK_LIST_LADIES, lady_ids)
     online_statuses = [True, False]
-    countries = ['United States', 'Canada', 'Australia', 'United Kingdom']
+    countries = ['United States', 'Canada', 'Australia', 'United Kingdom', 'New Zealand']
     letters = [
         'Send Fourth intro letter',
         'Send Third intro letter',
