@@ -31,7 +31,8 @@ BLACK_LIST_LADIES = [128289, 191124]
 GENTLEMAN_PROFILE_INFO_MAP = {}
 
 AGE_RANGE_MAP = {
-    (18, 29): 15,
+    (18, 22): 25,
+    (23, 29): 20,
     (30, 39): 10,
     (40, 49): 5,
     (50, float('inf')): 0,
@@ -259,7 +260,7 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
 
     # TODO: Replace with Wait-method
     countries = driver.find_element_by_css_selector('select[id="fk_countries"]')
-    time.sleep(2)  # dropdown list is populated in deferred way
+    time.sleep(3)  # dropdown list is populated in deferred way
     countries.send_keys(country)
 
     age_from = driver.find_element_by_css_selector('select[name="age_from"]')
