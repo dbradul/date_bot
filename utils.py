@@ -8,6 +8,9 @@ import logging
 from datetime import datetime as dt
 
 # ----------------------------------------------------------------------------------------------------------------------
+import db
+from models import GentlemanInfo
+
 log_file = "./logfile.log"
 log_level = logging.INFO
 logging.basicConfig(
@@ -93,3 +96,21 @@ class Screener:
     def pop_screen(cls):
         path = cls.screenshots_queue.pop()
         os.remove(path)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+def populate_priorities():
+    with open('mens_prio.txt') as f:
+        profile_ids = [int(line.strip()) for line in f.read().split('\n') if line]
+
+    for profile_id in profile_ids:
+        if db.get_gentleman_info_by_profile_id(profile_id):
+            db.update_gentleman_info(profile_id, priority=1)
+            print(f'Updated priority for {profile_id}')
+        else:
+            gentleman_info = GentlemanInfo(
+                profile_id=profile_id,
+                priority=1,
+            )
+            db.put_gentleman_info(gentleman_info)
+            print(f'Created new record for {profile_id}')

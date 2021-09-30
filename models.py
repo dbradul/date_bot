@@ -7,6 +7,7 @@ class GentlemanInfo(BaseModel):
     profile_id: Optional[int] = 0
     age_from: Optional[int] = 0
     age_to: Optional[int] = 0
+    priority: Optional[int] = 0
 
 
 # class RunStats(BaseModel):
