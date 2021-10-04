@@ -320,6 +320,8 @@ def process_ladies_prio(driver, lady_ids):
             logger.info(
                 f'Couldn\'t send letter ({ex}) for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping'
             )
+        except LimitIsExceededException:
+            raise
         except Exception as ex:
             logger.error(f'Exception {ex} for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
 
