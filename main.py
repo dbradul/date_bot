@@ -14,20 +14,24 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
 
 import db
-from db import get_gentleman_info, get_gentleman_info_by_profile_id, put_gentleman_info
+from exceptions import (
+    EmptyIntroLetterException,
+    LimitIsExceededException,
+    DirectSendLetterException,
+    msg_id_exception_map,
+)
 from models import GentlemanInfo
-from utils import logger, call_retrier, dump_exception_stack, Screener
+from utils import logger, dump_exception_stack, Screener
 
 load_dotenv()
 
-TIMEOUT = 8
+TIMEOUT = 16
 CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
 BASE_URL = os.getenv('BASE_URL')
-RESUME_PARSING_FROM_ID = 192705
-BLACK_LIST_LADIES = [128289, 191124]
+RESUME_PARSING_FROM_ID = 191757
+BLACK_LIST_LADIES = [128289, 191124, 203801]
 
 GENTLEMAN_PROFILE_INFO_MAP = {}
 
@@ -46,16 +50,6 @@ def get_delta_from_age_range(age):
         if range_from <= age <= rage_to:
             return delta
     return 0
-
-
-# ----------------------------------------------------------------------------------------------------------------------
-class EmptyIntroLetterException(Exception):
-    pass
-
-
-# ----------------------------------------------------------------------------------------------------------------------
-class LimitIsExceededException(Exception):
-    pass
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -112,21 +106,12 @@ def _cleanup_input_field(input_field):
 def process_gentleman(driver, url):
     driver.get(url)
 
-    try:
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]'))
-        )
-    except TimeoutException:
-        # here we can do additional check if Limit exceeding error occured
-        limit_exceeded = driver.find_elements_by_css_selector('div[id="msg_max_intros_reached"]')
-        if limit_exceeded:
-            raise LimitIsExceededException(limit_exceeded[0].text)
-        #
-        # limit_exceeded = driver.find_elements_by_css_selector('div[id="msg_fifth_intro_too_soon"]')
-        # if limit_exceeded:
-        #     raise LimitIsExceededException(limit_exceeded[0].text)
-        else:
-            raise
+    for k, v in msg_id_exception_map.items():
+        if driver.find_elements_by_css_selector(f'div[id="{k}"]'):
+            elem = driver.find_elements_by_css_selector(f'div[id="{k}"]')[0]
+            raise v(elem.text)
+
+    WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
 
     subject = driver.find_element_by_css_selector('input[id="mbox_subject"]').get_attribute('value')
     message = driver.find_element_by_css_selector('textarea[id="mbox_body"]').get_attribute('value')
@@ -154,7 +139,7 @@ def process_gentleman(driver, url):
 @lru_cache()
 def fetch_gentleman_profile_info(profile_link, driver):
     profile_id = int(profile_link.split('=')[1])
-    gentleman_info = get_gentleman_info_by_profile_id(profile_id)
+    gentleman_info = db.get_gentleman_info_by_profile_id(profile_id)
 
     if not gentleman_info:
         driver.execute_script('window.open()')
@@ -185,7 +170,7 @@ def fetch_gentleman_profile_info(profile_link, driver):
                 gentleman_info.priority = 0
                 break
 
-        put_gentleman_info(gentleman_info)
+        db.put_gentleman_info(gentleman_info)
 
         driver.close()
         driver.switch_to.window(driver.window_handles[-1])
@@ -316,17 +301,8 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
 def process_ladies_prio(driver, lady_ids):
     gentlemen_ids = [g.profile_id for g in db.get_gentlemen_info_by_priority(priority=1)]
     filtered_lady_ids = filter(lambda l: l not in BLACK_LIST_LADIES, lady_ids)
-    # letters = [
-    #     'Send Fourth intro letter',
-    #     'Send Third intro letter',
-    #     'Send Second intro letter',
-    #     'Send First intro letter',
-    # ]
 
-    # for lady_id, intro_letter, gentleman_id in itertools.product(filtered_lady_ids, letters, gentlemen_ids):
     for lady_id, gentleman_id in itertools.product(filtered_lady_ids, gentlemen_ids):
-        # driver.execute_script('window.open()')
-        # driver.switch_to.window(driver.window_handles[-1])
         global RESUME_PARSING_FROM_ID
         if RESUME_PARSING_FROM_ID:
             if RESUME_PARSING_FROM_ID == lady_id:
@@ -337,14 +313,15 @@ def process_ladies_prio(driver, lady_ids):
         url = f'http://office.loveme.com/send?mid={gentleman_id}&wid={lady_id}'
         try:
             process_gentleman(driver, url)
+            logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
         except EmptyIntroLetterException:
-            logger.info(f'Empty letter \'\' for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+            logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+        except DirectSendLetterException as ex:
+            logger.info(
+                f'Couldn\'t send letter ({ex}) for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping'
+            )
         except Exception as ex:
-            logger.error(f'Exception for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
-            # Screener.pop_screen()
-        #
-        # driver.close()
-        # driver.switch_to.window(driver.window_handles[-1])
+            logger.error(f'Exception {ex} for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
 
 
 # ----------------------------------------------------------------------------------------------------------------------
