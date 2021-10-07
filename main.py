@@ -1,40 +1,37 @@
-from functools import lru_cache
-
 import re
-
 import datetime
 import itertools
 import os
 import time
+import db
+from functools import lru_cache
 from contextlib import contextmanager
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-import db
+from models import GentlemanInfo
+from utils import logger, dump_exception_stack, Screener
 from exceptions import (
     EmptyIntroLetterException,
     LimitIsExceededException,
     DirectSendLetterException,
     msg_id_exception_map,
 )
-from models import GentlemanInfo
-from utils import logger, dump_exception_stack, Screener
 
 load_dotenv()
 
+# ----------------------------------------------------------------------------------------------------------------------
 TIMEOUT = 16
 CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
 BASE_URL = os.getenv('BASE_URL')
-RESUME_PARSING_FROM_ID = 191757
+RESUME_PARSING_FROM_ID = 0
 BLACK_LIST_LADIES = [128289, 191124, 203801]
-
 GENTLEMAN_PROFILE_INFO_MAP = {}
-
 AGE_RANGE_MAP = {
     (18, 22): 25,
     (23, 29): 20,
@@ -145,11 +142,12 @@ def fetch_gentleman_profile_info(profile_link, driver):
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
         driver.get(profile_link)
+        xpath = "//span[text()='I am interested in ladies between:']"
         WebDriverWait(driver, TIMEOUT).until(
-            EC.element_to_be_clickable((By.XPATH, "//span[text()='I am interested in ladies between:']"))
+            EC.element_to_be_clickable((By.XPATH, xpath))
         )
         info_text = (
-            driver.find_element(By.XPATH, "//span[text()='I am interested in ladies between:']")
+            driver.find_element(By.XPATH, xpath)
             .find_element_by_xpath('..')
             .text.replace('\n', '')
         )
@@ -310,7 +308,7 @@ def process_ladies_prio(driver, lady_ids):
             else:
                 continue
 
-        url = f'http://office.loveme.com/send?mid={gentleman_id}&wid={lady_id}'
+        url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
         try:
             process_gentleman(driver, url)
             logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
@@ -398,6 +396,7 @@ def main():
 
             logger.info('')
             logger.info('SUCCESSFULLY FINISHED!')
+
         except LimitIsExceededException as ex:
             logger.error(f'LIMIT EXCEEDING ERROR: {repr(ex)}')
         except Exception as ex:

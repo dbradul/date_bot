@@ -1,4 +1,3 @@
-import json
 import os
 import sqlite3
 
@@ -42,15 +41,3 @@ def put_gentleman_info(gentleman_info):
 def update_gentleman_info(profile_id, priority):
     query = 'update gentleman_info set priority = ? where profile_id = ?;'
     execute_query(query, (priority, profile_id))
-
-
-
-#
-# result = get_gentleman_info()
-# put_gentleman_info(
-#     [
-#         {'profile_id': 4445, 'age_from': 25, 'age_to': 50},
-#         {'profile_id': 4443, 'age_from': 19, 'age_to': 91},
-#     ]
-# )
-# print(result)
