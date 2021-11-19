@@ -19,7 +19,7 @@ class SendingLetterTooSoonException(DirectSendLetterException):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-class IntoLetterNotAllowedException(DirectSendLetterException):
+class IntroLetterNotAllowedException(DirectSendLetterException):
     pass
 
 
@@ -40,6 +40,6 @@ msg_id_exception_map = {
     "msg_third_intro_too_soon": SendingLetterTooSoonException,
     "msg_fourth_intro_too_soon": SendingLetterTooSoonException,
     "msg_fifth_intro_too_soon": SendingLetterTooSoonException,
-    "msg_intro_not_allowed": IntoLetterNotAllowedException,
+    "msg_intro_not_allowed": IntroLetterNotAllowedException,
     "msg_max_intros_reached": LimitIsExceededException,
 }
