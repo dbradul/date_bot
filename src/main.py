@@ -24,7 +24,7 @@ class Commands(Enum):
     # STATS = 'stats'
     LOGS = 'log'
     # ADD_MEN_IDS = 'add'
-    # SCREENSHOT = 'screen'
+    SCREENSHOT = 'screen'
 
     @classmethod
     def list(cls):
@@ -66,10 +66,6 @@ def stop_message(message):
 def restart_message(message):
     stop_message(message)
     start_message(message)
-    # bot.send_message(message.chat.id, f"Starting sending emails...")
-    # subprocess.call(['docker-compose', 'down', '-t', '0'])
-    # subprocess.call(['docker-compose', 'up', '-d'])
-    # bot.send_message(message.chat.id, f"Sending email has been started!")
 
 
 @bot.message_handler(commands=[Commands.LOGS.value])
@@ -81,6 +77,12 @@ def logs_message(message):
         num_records = int(m.group(1))
     logs = [line for line in islice(reverse_readline('./docker/sender/log/logfile.log'), num_records)]
     bot.send_message(message.chat.id, '\n'.join(reversed(logs)))
+
+
+@bot.message_handler(commands=[Commands.SCREENSHOT.value])
+@is_known_user
+def screen_message(message):
+    bot.send_message(message.chat.id, 'ec2-13-59-181-29.us-east-2.compute.amazonaws.com:9222')
 
 
 @bot.message_handler(content_types=['text', 'url'])

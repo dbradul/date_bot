@@ -1,3 +1,5 @@
+import time
+
 import re
 import datetime
 import itertools
@@ -115,9 +117,9 @@ def process_gentleman(driver, url):
 
     WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
 
-    subject = driver.find_elements(By.CSS_SELECTOR, 'input[id="mbox_subject"]').get_attribute('value')
+    subject = driver.find_element(By.CSS_SELECTOR, 'input[id="mbox_subject"]').get_attribute('value')
     # subject = driver.find_element_by_css_selector('input[id="mbox_subject"]').get_attribute('value')
-    message = driver.find_elements(By.CSS_SELECTOR, 'textarea[id="mbox_body"]').get_attribute('value')
+    message = driver.find_element(By.CSS_SELECTOR, 'textarea[id="mbox_body"]').get_attribute('value')
     # message = driver.find_element_by_css_selector('textarea[id="mbox_body"]').get_attribute('value')
     if not subject and not message:
         raise EmptyIntroLetterException()
