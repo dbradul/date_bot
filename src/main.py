@@ -24,7 +24,7 @@ class Commands(Enum):
     # STATS = 'stats'
     LOGS = 'log'
     # ADD_MEN_IDS = 'add'
-    SCREENSHOT = 'screen'
+    # SCREENSHOT = 'screen'
 
     @classmethod
     def list(cls):
@@ -82,7 +82,7 @@ def logs_message(message):
 @bot.message_handler(commands=[Commands.SCREENSHOT.value])
 @is_known_user
 def screen_message(message):
-    bot.send_message(message.chat.id, 'ec2-13-59-181-29.us-east-2.compute.amazonaws.com:9222')
+    bot.send_message(message.chat.id, '13.59.181.29:9222')
 
 
 @bot.message_handler(content_types=['text', 'url'])
