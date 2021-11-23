@@ -4,7 +4,12 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+selenium = "*"
+python-dotenv = "*"
+pydantic = "*"
 pytelegrambotapi = "*"
+docker = "*"
+docker-compose = "*"
 
 [dev-packages]
 

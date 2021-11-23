@@ -2,7 +2,7 @@ import re
 import datetime
 import itertools
 import os
-import time
+import socket
 import db
 from functools import lru_cache
 from contextlib import contextmanager
@@ -19,7 +19,6 @@ from utils import logger, dump_exception_stack, Screener
 from exceptions import (
     EmptyIntroLetterException,
     LimitIsExceededException,
-    DirectSendLetterException,
     msg_id_exception_map,
 )
 
@@ -28,6 +27,7 @@ load_dotenv()
 # ----------------------------------------------------------------------------------------------------------------------
 TIMEOUT = 16
 CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
+CHROME_REMOTE_DEBUG_PORT = os.getenv('CHROME_REMOTE_DEBUG_PORT')
 BASE_URL = os.getenv('BASE_URL')
 RESUME_PARSING_FROM_ID = 0
 BLACK_LIST_LADIES = [128289, 191124, 203801]
@@ -63,9 +63,11 @@ def create_driver(attach_mode=True, download_dir=None):
         options = webdriver.ChromeOptions()
         options.add_argument('window-size=1200x600')
         options.add_argument('disable-gpu')
-        options.add_argument("remote-debugging-port=9222")
-        options.add_argument('no-sandbox')
-        options.add_argument('disable-dev-shm-usage')
+        options.add_argument("--incognito")
+        options.add_argument(f"remote-debugging-port={CHROME_REMOTE_DEBUG_PORT}")
+        options.add_experimental_option(
+            "debuggerAddress", f"{socket.gethostbyname('browser')}:{CHROME_REMOTE_DEBUG_PORT}"
+        )
 
         driver = webdriver.Chrome(executable_path=CHROME_DRIVER_PATH, options=options)
 
@@ -80,16 +82,17 @@ def create_driver(attach_mode=True, download_dir=None):
 def login(driver):
     driver.get(BASE_URL)
     WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="do_ajax"]')))
-    signin_button = driver.find_element_by_css_selector('a[class="do_ajax"]')
+    signin_button = driver.find_element(By.CSS_SELECTOR, 'a[class="do_ajax"]')
+    # signin_button = driver.find_element_by_css_selector('a[class="do_ajax"]')
     signin_button.click()
     WebDriverWait(driver, TIMEOUT).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[id="ajax_office_login_logins_ident"]'))
     )
-    username = driver.find_element_by_css_selector('input[id="ajax_office_login_logins_ident"]')
+    username = driver.find_element(By.CSS_SELECTOR, 'input[id="ajax_office_login_logins_ident"]')
     username.send_keys(os.getenv('LOGIN', ''))
-    password = driver.find_element_by_css_selector('input[id="ajax_office_login_logins_password"]')
+    password = driver.find_element(By.CSS_SELECTOR, 'input[id="ajax_office_login_logins_password"]')
     password.send_keys(os.getenv('PASSWORD', ''))
-    submit = driver.find_element_by_css_selector('button[class="btn"]')
+    submit = driver.find_element(By.CSS_SELECTOR, 'button[class="btn"]')
     submit.click()
     WebDriverWait(driver, TIMEOUT).until(EC.invisibility_of_element_located((By.CSS_SELECTOR, 'button[class="btn"]')))
 
@@ -104,14 +107,18 @@ def process_gentleman(driver, url):
     driver.get(url)
 
     for k, v in msg_id_exception_map.items():
-        if driver.find_elements_by_css_selector(f'div[id="{k}"]'):
-            elem = driver.find_elements_by_css_selector(f'div[id="{k}"]')[0]
+        if driver.find_elements(By.CSS_SELECTOR, f'div[id="{k}"]'):
+            # if driver.find_elements_by_css_selector(f'div[id="{k}"]'):
+            elem = driver.find_elements(By.CSS_SELECTOR, f'div[id="{k}"]')[0]
+            # elem = driver.find_elements_by_css_selector(f'div[id="{k}"]')[0]
             raise v(elem.text)
 
     WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
 
-    subject = driver.find_element_by_css_selector('input[id="mbox_subject"]').get_attribute('value')
-    message = driver.find_element_by_css_selector('textarea[id="mbox_body"]').get_attribute('value')
+    subject = driver.find_elements(By.CSS_SELECTOR, 'input[id="mbox_subject"]').get_attribute('value')
+    # subject = driver.find_element_by_css_selector('input[id="mbox_subject"]').get_attribute('value')
+    message = driver.find_elements(By.CSS_SELECTOR, 'textarea[id="mbox_body"]').get_attribute('value')
+    # message = driver.find_element_by_css_selector('textarea[id="mbox_body"]').get_attribute('value')
     if not subject and not message:
         raise EmptyIntroLetterException()
 
@@ -143,14 +150,8 @@ def fetch_gentleman_profile_info(profile_link, driver):
         driver.switch_to.window(driver.window_handles[-1])
         driver.get(profile_link)
         xpath = "//span[text()='I am interested in ladies between:']"
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.element_to_be_clickable((By.XPATH, xpath))
-        )
-        info_text = (
-            driver.find_element(By.XPATH, xpath)
-            .find_element_by_xpath('..')
-            .text.replace('\n', '')
-        )
+        WebDriverWait(driver, TIMEOUT).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+        info_text = driver.find_element(By.XPATH, xpath).find_element_by_xpath('..').text.replace('\n', '')
         patterns = [
             '.* (\d+) - (\d+)',
             '.* -- - (\d+)',
@@ -314,10 +315,6 @@ def process_ladies_prio(driver, lady_ids):
             logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
         except EmptyIntroLetterException:
             logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
-        except DirectSendLetterException as ex:
-            logger.info(
-                f'Couldn\'t send letter ({ex}) for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping'
-            )
         except LimitIsExceededException:
             raise
         except Exception as ex:
@@ -362,10 +359,14 @@ def run_parsing(driver):
     WebDriverWait(driver, TIMEOUT).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[class="default_photo link_options search_men_office"]'))
     )
-    send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men_office"]')
+    send_intro_buttons = driver.find_elements(
+        By.CSS_SELECTOR, 'a[class="default_photo link_options search_men_office"]'
+    )
+    # send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men_office"]')
     lady_ids = [int(send_intro_button.get_attribute('id')) for send_intro_button in send_intro_buttons]
 
-    pages = driver.find_elements_by_css_selector('a[class="navigation_on"]')
+    pages = driver.find_elements(By.CSS_SELECTOR, 'a[class="navigation_on"]')
+    # pages = driver.find_elements_by_css_selector('a[class="navigation_on"]')
     if pages:
         page_urls = [page.get_attribute('href') for page in pages[:-1]]
         for page_url in page_urls:
@@ -375,9 +376,14 @@ def run_parsing(driver):
                     (By.CSS_SELECTOR, 'a[class="default_photo link_options search_men_office"]')
                 )
             )
-            send_intro_buttons = driver.find_elements_by_css_selector(
-                'a[class="default_photo link_options search_men_office"]'
+
+            send_intro_buttons = driver.find_elements(
+                By.CSS_SELECTOR,
+                'a[class="default_photo link_options search_men_office"]',
             )
+            # send_intro_buttons = driver.find_elements_by_css_selector(
+            #     'a[class="default_photo link_options search_men_office"]'
+            # )
             lady_ids += [int(send_intro_button.get_attribute('id')) for send_intro_button in send_intro_buttons]
 
     process_ladies_prio(driver, lady_ids)
@@ -387,9 +393,10 @@ def run_parsing(driver):
 # ----------------------------------------------------------------------------------------------------------------------
 def main():
     with create_driver() as driver:
-
         try:
-            logger.info('STARTED NEW BOT RUN')
+            logger.info('\n')
+            logger.info('-------------------------------------')
+            logger.info('STARTED NEW SENDER BOT RUN')
             login(driver)
 
             run_parsing(driver)
@@ -405,5 +412,6 @@ def main():
             Screener.push_screen(driver)
 
 
-if __name__ == "__main__":
+# ----------------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
     main()

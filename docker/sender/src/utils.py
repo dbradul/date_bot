@@ -11,10 +11,10 @@ from datetime import datetime as dt
 import db
 from models import GentlemanInfo
 
-log_file = "./logfile.log"
+log_file = "./log/logfile.log"
 log_level = logging.INFO
 logging.basicConfig(
-    level=log_level, filename=log_file, filemode="w+", format="%(asctime)-15s %(levelname)-8s %(message)s"
+    level=log_level, filename=log_file, filemode="a+", format="%(asctime)-15s %(levelname)-8s %(message)s"
 )
 logger = logging.getLogger("date_parser")
 logger.addHandler(logging.StreamHandler())

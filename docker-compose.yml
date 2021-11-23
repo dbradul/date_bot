@@ -1,0 +1,26 @@
+version: '3'
+
+services:
+  sender:
+    build: ./docker/sender/
+    command: python src/main.py
+    volumes:
+      - ./docker/sender/src:/app/src
+      - ./docker/sender/log:/app/log
+      - ./docker/sender/date.db:/app/date.db
+      - ./docker/sender/screenshots:/app/screenshots
+    env_file:
+      - .env
+
+  browser:
+    build: ./docker/browser/
+    command: /app/start-browser.sh
+    ports:
+      - 9222:${CHROME_REMOTE_DEBUG_PORT}
+    env_file:
+      - .env
+    volumes:
+      - ./docker/browser/start-browser.sh:/app/start-browser.sh
+
+volumes:
+  browser_data: {}

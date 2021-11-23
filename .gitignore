@@ -6,6 +6,7 @@
 *.log
 *.swp
 env/
+.venv/
 .env
 .idea/*
 .gitattributes

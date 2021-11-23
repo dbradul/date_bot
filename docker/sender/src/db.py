@@ -3,9 +3,11 @@ import sqlite3
 
 from models import GentlemanInfo
 
+DB_FILEPATH = './date.db'
+
 
 def execute_query(query, args=()):
-    db_path = os.path.join(os.getcwd(), 'date.db')
+    db_path = os.path.join(os.getcwd(), DB_FILEPATH)
     with sqlite3.connect(db_path) as conn:
         cur = conn.cursor()
         cur.execute(query, args)
