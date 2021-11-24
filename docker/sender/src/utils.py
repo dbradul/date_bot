@@ -104,13 +104,4 @@ def populate_priorities():
         profile_ids = [int(line.strip()) for line in f.read().split('\n') if line]
 
     for profile_id in profile_ids:
-        if db.get_gentleman_info_by_profile_id(profile_id):
-            db.update_gentleman_info(profile_id, priority=1)
-            print(f'Updated priority for {profile_id}')
-        else:
-            gentleman_info = GentlemanInfo(
-                profile_id=profile_id,
-                priority=1,
-            )
-            db.put_gentleman_info(gentleman_info)
-            print(f'Created new record for {profile_id}')
+        db.upsert_gentlemen_by_profile_id(profile_id)

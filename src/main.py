@@ -7,7 +7,7 @@ import subprocess
 from bot import bot
 from enum import Enum
 
-from utils import reverse_readline
+from utils import reverse_readline, upsert_gentlemen_by_profile_id
 
 clients = {
     545573346: 'Olga',
@@ -17,13 +17,22 @@ clients = {
 LOG_NUM_RECORDS = 10
 
 
+class State(Enum):
+    STARTED = 'started'
+    STOPPED = 'stopped'
+    UNKNOWN = 'unknown'
+
+
+state = State.UNKNOWN
+
+
 class Commands(Enum):
     START = 'start'
     STOP = 'stop'
     RESTART = 'restart'
     # STATS = 'stats'
     LOGS = 'log'
-    # ADD_MEN_IDS = 'add'
+    ADD_MEN_IDS = 'add'
     # SCREENSHOT = 'screen'
 
     @classmethod
@@ -48,16 +57,20 @@ def is_known_user(f):
 @bot.message_handler(commands=[Commands.START.value])
 @is_known_user
 def start_message(message):
+    global state
     bot.send_message(message.chat.id, f"Starting sending emails...")
     subprocess.call(['docker-compose', 'up', '-d'])
+    state = State.STARTED
     bot.send_message(message.chat.id, f"Sending email has been started!")
 
 
 @bot.message_handler(commands=[Commands.STOP.value])
 @is_known_user
 def stop_message(message):
+    global state
     bot.send_message(message.chat.id, f"Stopping sending emails...")
     subprocess.call(['docker-compose', 'down', '-t', '0'])
+    state = State.STOPPED
     bot.send_message(message.chat.id, f"Sending emails has been stopped!")
 
 
@@ -79,7 +92,31 @@ def logs_message(message):
     bot.send_message(message.chat.id, '\n'.join(reversed(logs)))
 
 
-#
+@bot.message_handler(commands=[Commands.ADD_MEN_IDS.value])
+@is_known_user
+def add_men_ids_message(message):
+    if state != State.STOPPED:
+        bot.send_message(
+            message.chat.id, 'Bot is already started or in unknown state!\n You need to stop it before adding IDs.'
+        )
+        return
+
+    bot.send_message(message.chat.id, f"Adding men ids...")
+    if m := re.match('/add ([\d+ ]+)$', message.text):
+        try:
+            for profile_id in m.group(1).split(' '):
+                upsert_gentlemen_by_profile_id(int(profile_id))
+            bot.send_message(message.chat.id, 'IDs have been successfully added/updated!')
+        except Exception as e:
+            bot.send_message(message.chat.id, f'ERROR: Something went wrong while adding IDs: {e}')
+    else:
+        bot.send_message(
+            chat_id=message.chat.id,
+            text='Wrong format! Expected: integers delimited by space. \nExample: `/add 123 456 789`',
+            parse_mode="Markdown",
+        )
+
+
 # @bot.message_handler(commands=[Commands.SCREENSHOT.value])
 # @is_known_user
 # def screen_message(message):

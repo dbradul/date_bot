@@ -43,3 +43,11 @@ def put_gentleman_info(gentleman_info):
 def update_gentleman_info(profile_id, priority):
     query = 'update gentleman_info set priority = ? where profile_id = ?;'
     execute_query(query, (priority, profile_id))
+
+
+def upsert_gentlemen_by_profile_id(profile_id):
+    if get_gentleman_info_by_profile_id(profile_id):
+        update_gentleman_info(profile_id, priority=1)
+    else:
+        gentleman_info = GentlemanInfo(profile_id=profile_id, priority=1)
+        put_gentleman_info(gentleman_info)
