@@ -97,22 +97,26 @@ def logs_message(message):
 def add_men_ids_message(message):
     if state != State.STOPPED:
         bot.send_message(
-            message.chat.id, 'Bot is already started or in unknown state!\n You need to stop it before adding IDs.'
+            message.chat.id, 'Bot is already started or in unknown state! \nYou need to stop it before adding IDs.'
         )
         return
 
-    bot.send_message(message.chat.id, f"Adding men ids...")
     if m := re.match('/add ([\d+ ]+)$', message.text):
+        profile_id = None
         try:
-            for profile_id in m.group(1).split(' '):
+            bot.send_message(message.chat.id, f"Adding men ids...")
+            for profile_id in m.group(1).split():
                 upsert_gentlemen_by_profile_id(int(profile_id))
             bot.send_message(message.chat.id, 'IDs have been successfully added/updated!')
         except Exception as e:
-            bot.send_message(message.chat.id, f'ERROR: Something went wrong while adding IDs: {e}')
+            if profile_id:
+                bot.send_message(message.chat.id, f'ERROR: Something went wrong while adding ID {profile_id}: {e}')
+            else:
+                bot.send_message(message.chat.id, f'ERROR: Something went wrong while adding IDs: {e}')
     else:
         bot.send_message(
             chat_id=message.chat.id,
-            text='Wrong format! Expected: integers delimited by space. \nExample: `/add 123 456 789`',
+            text='Wrong format!\n Expected: integers delimited by space. \nExample: `/add 123 456 789`',
             parse_mode="Markdown",
         )
 
