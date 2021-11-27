@@ -2,6 +2,7 @@ import os
 import sqlite3
 
 from models import GentlemanInfo
+from models import LadyInfo
 
 DB_FILEPATH = './date.db'
 
@@ -51,3 +52,15 @@ def upsert_gentlemen_by_profile_id(profile_id):
     else:
         gentleman_info = GentlemanInfo(profile_id=profile_id, priority=1)
         put_gentleman_info(gentleman_info)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+def get_lady_info_by_profile_id(profile_id):
+    query = 'select profile_id, age from lady_info where profile_id=?;'
+    records = execute_query(query, (profile_id,))
+    return LadyInfo(**records[0]) if records else None
+
+
+def put_lady_info(lady_info):
+    query = 'insert into lady_info (profile_id, age) values (?, ?);'
+    execute_query(query, tuple(lady_info.dict().values()))

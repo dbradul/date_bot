@@ -16,7 +16,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-from models import GentlemanInfo
+from models import GentlemanInfo, LadyInfo
 from utils import logger, dump_exception_stack, Screener
 from exceptions import (
     EmptyIntroLetterException,
@@ -31,7 +31,7 @@ TIMEOUT = 16
 CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH')
 CHROME_REMOTE_DEBUG_PORT = os.getenv('CHROME_REMOTE_DEBUG_PORT')
 BASE_URL = os.getenv('BASE_URL')
-RESUME_PARSING_FROM_ID = 0
+RESUME_FROM_LADY_ID = 0
 BLACK_LIST_LADIES = [128289, 191124, 143427, 143602]
 GENTLEMAN_PROFILE_INFO_MAP = {}
 AGE_RANGE_MAP = {
@@ -124,13 +124,15 @@ def process_gentleman(driver, url):
     if not subject and not message:
         raise EmptyIntroLetterException()
 
-    attach_photo_button = driver.find_elements_by_css_selector('a[id="choose_photos_attached"]')
+    # attach_photo_button = driver.find_elements_by_css_selector('a[id="choose_photos_attached"]')
+    attach_photo_button = driver.find_elements(By.CSS_SELECTOR, 'a[id="choose_photos_attached"]')
     if attach_photo_button:
         attach_photo_button[0].click()
         WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="fk_files[]"]'))
         )
-        attach_photo_checkboxes = driver.find_elements_by_css_selector('input[name="fk_files[]"]')
+        # attach_photo_checkboxes = driver.find_elements_by_css_selector('input[name="fk_files[]"]')
+        attach_photo_checkboxes = driver.find_elements(By.CSS_SELECTOR, 'input[name="fk_files[]"]')
         for attach_photo_checkbox in attach_photo_checkboxes[:4]:
             try:
                 attach_photo_checkbox.click()
@@ -180,27 +182,73 @@ def fetch_gentleman_profile_info(profile_link, driver):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
+@lru_cache()
+def fetch_lady_profile_info(profile_link, driver):
+    profile_id = int(profile_link.split('=')[1])
+    lady_info = db.get_lady_info_by_profile_id(profile_id)
+
+    if not lady_info:
+        driver.execute_script('window.open()')
+        driver.switch_to.window(driver.window_handles[-1])
+        driver.get(profile_link)
+
+        lady_info = [
+            e.text
+            for e in driver.find_elements(By.CSS_SELECTOR, 'p[class="small gray"]')
+            if e.text.endswith('Ukraine')
+            # e.text for e in driver.find_elements_by_css_selector('p[class="small gray"]') if e.text.endswith('Ukraine')
+        ]
+        lady_age = int(lady_info[0].split(', ')[0])
+
+        lady_info = LadyInfo(
+            profile_id=profile_id,
+            age=lady_age,
+        )
+        # for pattern in patterns:
+        #     m = re.match(pattern, info_text)
+        #     if m:
+        #         age_from, age_to = m.groups() if len(m.groups()) == 2 else [0, m.groups()[0]]
+        #         gentleman_info.age_from = int(age_from)
+        #         gentleman_info.age_to = int(age_to)
+        #         gentleman_info.priority = 0
+        #         break
+
+        db.put_lady_info(lady_info)
+
+        driver.close()
+        driver.switch_to.window(driver.window_handles[-1])
+
+    return lady_info
+
+
+# ----------------------------------------------------------------------------------------------------------------------
 def process_gentlemen(driver):
     WebDriverWait(driver, TIMEOUT).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'h1[class="display_title"]'))
     )
 
-    error_msg = driver.find_elements_by_css_selector('div[class="error_msg"]')
-
-    lady_info = [
-        e.text for e in driver.find_elements_by_css_selector('p[class="small gray"]') if e.text.endswith('Ukraine')
-    ]
-    lady_age = int(lady_info[0].split(', ')[0])
-
+    # error_msg = driver.find_elements_by_css_selector('div[class="error_msg"]')
+    error_msg = driver.find_elements(By.CSS_SELECTOR, 'div[class="error_msg"]')
     if error_msg and error_msg[0].text == 'Your search returned no results. Please try again using different criteria':
         # no results -> just return
         logger.info(f'No results for given search criteria -> proceed with another letter, if any')
         return
 
-    profile_links = [e.get_attribute('href') for e in driver.find_elements_by_css_selector('a[target="_blank"]')]
-    send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men"]')
+    lady_info = [
+        e.text
+        for e in driver.find_elements(By.CSS_SELECTOR, 'p[class="small gray"]')
+        if e.text.endswith('Ukraine')
+        # e.text for e in driver.find_elements_by_css_selector('p[class="small gray"]') if e.text.endswith('Ukraine')
+    ]
+    lady_age = int(lady_info[0].split(', ')[0])
+
+    # profile_links = [e.get_attribute('href') for e in driver.find_elements_by_css_selector('a[target="_blank"]')]
+    profile_links = [e.get_attribute('href') for e in driver.find_elements(By.CSS_SELECTOR, 'a[target="_blank"]')]
+    # send_intro_buttons = driver.find_elements_by_css_selector('a[class="default_photo link_options search_men"]')
+    send_intro_buttons = driver.find_elements(By.CSS_SELECTOR, 'a[class="default_photo link_options search_men"]')
     for profile_link, send_intro_button in zip(profile_links[2:][::2], send_intro_buttons):
         profile_info = fetch_gentleman_profile_info(profile_link, driver)
+        logger.info(f'profile_link={profile_link}')
         if profile_info.age_to:
             matched_age = profile_info.age_from <= lady_age <= profile_info.age_to
             if not matched_age:
@@ -210,6 +258,7 @@ def process_gentlemen(driver):
                 continue
 
         gentleman_url = send_intro_button.get_attribute('href')
+        logger.info(f'gentleman_url={gentleman_url}')
 
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
@@ -226,12 +275,12 @@ def process_gentlemen(driver):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def process_lady(driver, lady_id, online_status, country, intro_letter):
-    global RESUME_PARSING_FROM_ID
-    if RESUME_PARSING_FROM_ID:
-        if RESUME_PARSING_FROM_ID == lady_id:
-            RESUME_PARSING_FROM_ID = ''
-        else:
-            return
+    # global RESUME_FROM_LADY_ID
+    # if RESUME_FROM_LADY_ID:
+    #     if RESUME_FROM_LADY_ID == lady_id:
+    #         RESUME_FROM_LADY_ID = ''
+    #     else:
+    #         return
 
     logger.info(f'Started processing lady with id={lady_id}, country={country}, letter=\'{intro_letter}\'')
     driver.get(f'{BASE_URL}/search_men_office/?women_id={lady_id}')
@@ -240,31 +289,42 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="reg_date_from"]'))
     )
 
-    is_online = driver.find_element_by_css_selector('input[id="is_online"]')
+    # is_online = driver.find_element_by_css_selector('input[id="is_online"]')
+    is_online = driver.find_element(By.CSS_SELECTOR, 'input[id="is_online"]')
     if is_online.get_attribute('checked') == 'true' and not online_status:
         is_online.click()
     elif is_online.get_attribute('checked') is None and online_status:
         is_online.click()
-    reg_date_from = driver.find_element_by_css_selector('input[name="reg_date_from"]')
-    reg_date_to = driver.find_element_by_css_selector('input[name="reg_date_to"]')
-    last_login_from = driver.find_element_by_css_selector('input[name="date_from"]')
-    last_login_to = driver.find_element_by_css_selector('input[name="date_to"]')
+    # reg_date_from = driver.find_element_by_css_selector('input[name="reg_date_from"]')
+    reg_date_from = driver.find_element(By.CSS_SELECTOR, 'input[name="reg_date_from"]')
+    # reg_date_to = driver.find_element_by_css_selector('input[name="reg_date_to"]')
+    reg_date_to = driver.find_element(By.CSS_SELECTOR, 'input[name="reg_date_to"]')
+    # last_login_from = driver.find_element_by_css_selector('input[name="date_from"]')
+    last_login_from = driver.find_element(By.CSS_SELECTOR, 'input[name="date_from"]')
+    # last_login_to = driver.find_element_by_css_selector('input[name="date_to"]')
+    last_login_to = driver.find_element(By.CSS_SELECTOR, 'input[name="date_to"]')
 
     # TODO: Replace with Wait-method
-    countries = driver.find_element_by_css_selector('select[id="fk_countries"]')
+    # countries = driver.find_element_by_css_selector('select[id="fk_countries"]')
+    countries = driver.find_element(By.CSS_SELECTOR, 'select[id="fk_countries"]')
     time.sleep(3)  # dropdown list is populated in deferred way
     countries.send_keys(country)
 
-    age_from = driver.find_element_by_css_selector('select[name="age_from"]')
-    lady_age = driver.find_elements_by_css_selector('p[class="small gray"]')[1].text.split(', ')[0]
+    # age_from = driver.find_element_by_css_selector('select[name="age_from"]')
+    age_from = driver.find_element(By.CSS_SELECTOR, 'select[name="age_from"]')
+    # lady_age = driver.find_elements_by_css_selector('p[class="small gray"]')[1].text.split(', ')[0]
+    lady_age = driver.find_elements(By.CSS_SELECTOR, 'p[class="small gray"]')[1].text.split(', ')[0]
     gentleman_age_from = int(lady_age) + get_delta_from_age_range(int(lady_age))
-    age_from_options = age_from.find_elements_by_css_selector('option')
+    # age_from_options = age_from.find_elements_by_css_selector('option')
+    age_from_options = age_from.find_elements(By.CSS_SELECTOR, 'option')
     for age_from_option in age_from_options[1:]:
         if int(age_from_option.text) == gentleman_age_from:
             age_from_option.click()
             break
-    age_to = driver.find_element_by_css_selector('select[name="age_to"]')
-    age_to.find_elements_by_css_selector('option')[-1].click()
+    # age_to = driver.find_element_by_css_selector('select[name="age_to"]')
+    age_to = driver.find_element(By.CSS_SELECTOR, 'select[name="age_to"]')
+    # age_to.find_elements_by_css_selector('option')[-1].click()
+    age_to.find_elements(By.CSS_SELECTOR, 'option')[-1].click()
 
     current_datetime = datetime.datetime.now()
     _cleanup_input_field(reg_date_from)
@@ -276,8 +336,10 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
     _cleanup_input_field(last_login_to)
     last_login_to.send_keys(current_datetime.date().strftime('%Y-%m-%d'))
 
-    intro_types = driver.find_element_by_css_selector('select[name="intro_type"]')
-    intro_types_options = intro_types.find_elements_by_css_selector('option')
+    # intro_types = driver.find_element_by_css_selector('select[name="intro_type"]')
+    intro_types = driver.find_element(By.CSS_SELECTOR, 'select[name="intro_type"]')
+    # intro_types_options = intro_types.find_elements_by_css_selector('option')
+    intro_types_options = intro_types.find_elements(By.CSS_SELECTOR, 'option')
 
     for intro_types_option in intro_types_options:
         if intro_types_option.text == intro_letter:
@@ -289,7 +351,8 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
 
     process_gentlemen(driver)
 
-    pages = driver.find_elements_by_css_selector('a[class="navigation_on"]')
+    # pages = driver.find_elements_by_css_selector('a[class="navigation_on"]')
+    pages = driver.find_elements(By.CSS_SELECTOR, 'a[class="navigation_on"]')
 
     if pages:
         page_urls = [page.get_attribute('href') for page in pages[:-1]]
@@ -301,18 +364,23 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
 # ----------------------------------------------------------------------------------------------------------------------
 def process_ladies_prio(driver, lady_ids):
     gentlemen_ids = [g.profile_id for g in db.get_gentlemen_info_by_priority(priority=1)]
-    filtered_lady_ids = filter(lambda l: l not in BLACK_LIST_LADIES, lady_ids)
 
-    for lady_id, gentleman_id in itertools.product(filtered_lady_ids, gentlemen_ids):
-        global RESUME_PARSING_FROM_ID
-        if RESUME_PARSING_FROM_ID:
-            if RESUME_PARSING_FROM_ID == lady_id:
-                RESUME_PARSING_FROM_ID = ''
-            else:
-                continue
-
+    for lady_id, gentleman_id in itertools.product(lady_ids, gentlemen_ids):
         url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
+
         try:
+            profile_link = f'{BASE_URL}/profile?id={gentleman_id}'
+            profile_info = fetch_gentleman_profile_info(profile_link, driver)
+
+            lady_profile_link = f'{BASE_URL}/search_men_office/?women_id={lady_id}'
+            lady_profile_info = fetch_lady_profile_info(lady_profile_link, driver)
+
+            if profile_info.age_to:
+                matched_age = profile_info.age_from <= lady_profile_info.age <= profile_info.age_to
+                if not matched_age:
+                    logger.info(f'Not matched age -> skipped. Lady={lady_profile_info}, gentleman={profile_info}')
+                    continue
+
             process_gentleman(driver, url)
             logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
         except EmptyIntroLetterException:
@@ -325,7 +393,6 @@ def process_ladies_prio(driver, lady_ids):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def process_ladies(driver, lady_ids):
-    filtered_lady_ids = filter(lambda l: l not in BLACK_LIST_LADIES, lady_ids)
     online_statuses = [True, False]
     countries = ['United States', 'Canada', 'Australia', 'United Kingdom', 'New Zealand']
     letters = [
@@ -336,7 +403,7 @@ def process_ladies(driver, lady_ids):
     ]
 
     for online_status, country, lady_id, intro_letter in itertools.product(
-        online_statuses, countries, filtered_lady_ids, letters
+        online_statuses, countries, lady_ids, letters
     ):
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
@@ -388,8 +455,14 @@ def run_parsing(driver):
             # )
             lady_ids += [int(send_intro_button.get_attribute('id')) for send_intro_button in send_intro_buttons]
 
-    process_ladies_prio(driver, lady_ids)
-    process_ladies(driver, lady_ids)
+    # Pickup among available
+    filtered_lady_ids = filter(lambda l: l not in BLACK_LIST_LADIES, lady_ids)
+    resumed_and_filtered_lady_ids = itertools.dropwhile(
+        lambda x: RESUME_FROM_LADY_ID and x != RESUME_FROM_LADY_ID, filtered_lady_ids
+    )
+
+    process_ladies_prio(driver, resumed_and_filtered_lady_ids)
+    process_ladies(driver, resumed_and_filtered_lady_ids)
 
 
 # ----------------------------------------------------------------------------------------------------------------------

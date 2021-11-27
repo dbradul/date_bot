@@ -33,6 +33,7 @@ class Commands(Enum):
     # STATS = 'stats'
     LOGS = 'log'
     ADD_MEN_IDS = 'add'
+    # TEST = 'test'
     # SCREENSHOT = 'screen'
 
     @classmethod

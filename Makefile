@@ -43,3 +43,9 @@ restart-browser:
 
 restart-sender:
 	docker-compose restart -t 0 sender
+
+
+#######################################
+
+run-tg-bot:
+	docker run -it --rm --env-file .env -v /var/run/docker.sock:/var/run/docker.sock -v ${PWD}/src:/app/src  date_parser python /app/src/main.py
