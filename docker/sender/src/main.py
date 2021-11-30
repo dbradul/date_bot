@@ -426,7 +426,7 @@ def collect_lady_ids(driver):
 # ----------------------------------------------------------------------------------------------------------------------
 def run_sending(driver):
     lady_ids = collect_lady_ids(driver)
-    # process_ladies_prio(driver, lady_ids)
+    process_ladies_prio(driver, lady_ids)
     process_ladies(driver, lady_ids)
 
 
