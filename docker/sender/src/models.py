@@ -1,14 +1,19 @@
 from pydantic import BaseModel
 from typing import Optional
 
-class GentlemanInfo(BaseModel):
+class MyBaseModel(BaseModel):
+    def __str__(self):
+        return str(self.__dict__)
+
+
+class GentlemanInfo(MyBaseModel):
     profile_id: Optional[int] = 0
     age_from: Optional[int] = 0
     age_to: Optional[int] = 0
     priority: Optional[int] = 0
 
 
-class LadyInfo(BaseModel):
+class LadyInfo(MyBaseModel):
     profile_id: Optional[int] = 0
     age: Optional[int] = 0
 

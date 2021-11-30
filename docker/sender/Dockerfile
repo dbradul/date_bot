@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.9
 
 # Fetch latest updates
 RUN apt-get update

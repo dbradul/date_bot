@@ -10,8 +10,8 @@ from enum import Enum
 from utils import reverse_readline, upsert_gentlemen_by_profile_id
 
 clients = {
-    545573346: 'Olga',
-    229253199: 'Dmytro',
+    545573346: 'User1',
+    229253199: 'User2',
 }
 
 LOG_NUM_RECORDS = 10
