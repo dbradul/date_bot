@@ -327,17 +327,18 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def has_match(lady_info, gentleman_info):
-    result = False
+    result = True
     if gentleman_info.age_to:
-        matched_age = gentleman_info.age_from <= lady_info.age <= gentleman_info.age_to
-        result = matched_age
+        result &= lady_info.age <= gentleman_info.age_to
+    if gentleman_info.age_from:
+        result &= gentleman_info.age_from <= lady_info.age
     return result
 
 
 # ----------------------------------------------------------------------------------------------------------------------
 def process_ladies_prio(driver, lady_ids):
     gentlemen_ids = [g.profile_id for g in db.get_gentlemen_info_by_priority(priority=1)]
-    SENT_COUNT_LIMIT = 5
+    SENT_COUNT_LIMIT = 50
     sent_count = 0
     lady_id_prev = None
 
@@ -436,7 +437,10 @@ def collect_lady_ids(driver):
         lambda x: RESUME_FROM_LADY_ID and x != RESUME_FROM_LADY_ID, filtered_lady_ids
     )
 
-    return resumed_and_filtered_lady_ids
+    logger.info(list(filtered_lady_ids))
+    logger.info(list(resumed_and_filtered_lady_ids))
+    #return resumed_and_filtered_lady_ids
+    return filtered_lady_ids
 
 
 # ----------------------------------------------------------------------------------------------------------------------
