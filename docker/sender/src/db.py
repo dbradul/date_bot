@@ -41,16 +41,16 @@ def put_gentleman_info(gentleman_info):
     execute_query(query, tuple(gentleman_info.dict().values()))
 
 
-def update_gentleman_info(profile_id, priority):
-    query = 'update gentleman_info set priority = ? where profile_id = ?;'
-    execute_query(query, (priority, profile_id))
+def update_gentleman_info(gentleman_info):
+    query = 'update gentleman_info set profile_id=?, age_from=?, age_to=?, priority=? where profile_id = ?;'
+    execute_query(query, tuple(gentleman_info.dict().values()) + (gentleman_info.profile_id,))
 
 
-def upsert_gentlemen_by_profile_id(profile_id):
-    if get_gentleman_info_by_profile_id(profile_id):
-        update_gentleman_info(profile_id, priority=1)
+def upsert_gentlemen_by_profile_id(gentleman_info):
+    if get_gentleman_info_by_profile_id(gentleman_info.profile_id):
+        update_gentleman_info(gentleman_info)
     else:
-        gentleman_info = GentlemanInfo(profile_id=profile_id, priority=1)
+        gentleman_info = GentlemanInfo(profile_id=gentleman_info.profile_id)
         put_gentleman_info(gentleman_info)
 
 

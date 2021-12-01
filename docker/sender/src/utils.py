@@ -104,4 +104,4 @@ def populate_priorities():
         profile_ids = [int(line.strip()) for line in f.read().split('\n') if line]
 
     for profile_id in profile_ids:
-        db.upsert_gentlemen_by_profile_id(profile_id)
+        db.put_gentleman_info(GentlemanInfo(profile_id=profile_id))

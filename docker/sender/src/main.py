@@ -143,7 +143,7 @@ def fetch_gentleman_profile_info(gentleman_id, driver):
     profile_link = f'{BASE_URL}/profile?id={gentleman_id}'
     gentleman_info = db.get_gentleman_info_by_profile_id(gentleman_id)
 
-    if not gentleman_info:
+    if not (gentleman_info and gentleman_info.age_from):
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
         driver.get(profile_link)
@@ -155,9 +155,13 @@ def fetch_gentleman_profile_info(gentleman_id, driver):
             '.* -- - (\d+)',
         ]
 
-        gentleman_info = GentlemanInfo(
-            profile_id=gentleman_id,
-        )
+        if not gentleman_info:
+            gentleman_info = GentlemanInfo(
+                profile_id=gentleman_id,
+            )
+            logger.info(f'CREATE new gentleman record\n')
+        else:
+            logger.info(f'UPDATE existing gentleman record\n')
         for pattern in patterns:
             if m := re.match(pattern, info_text):
                 age_from, age_to = m.groups() if len(m.groups()) == 2 else [0, m.groups()[0]]
@@ -166,7 +170,7 @@ def fetch_gentleman_profile_info(gentleman_id, driver):
                 gentleman_info.priority = 0
                 break
 
-        db.put_gentleman_info(gentleman_info)
+        db.upsert_gentlemen_by_profile_id(gentleman_info)
 
         driver.close()
         driver.switch_to.window(driver.window_handles[-1])
@@ -333,9 +337,20 @@ def has_match(lady_info, gentleman_info):
 # ----------------------------------------------------------------------------------------------------------------------
 def process_ladies_prio(driver, lady_ids):
     gentlemen_ids = [g.profile_id for g in db.get_gentlemen_info_by_priority(priority=1)]
+    SENT_COUNT_LIMIT = 5
+    sent_count = 0
+    lady_id_prev = None
 
     for lady_id, gentleman_id in itertools.product(lady_ids, gentlemen_ids):
         url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
+
+        if lady_id_prev != lady_id:
+            lady_id_prev = lady_id
+            sent_count = 0
+
+        if sent_count == SENT_COUNT_LIMIT:
+            logger.info(f'Reached limit of {SENT_COUNT_LIMIT} daily email for lady id={lady_id}.')
+            continue
 
         try:
             profile_info = fetch_gentleman_profile_info(gentleman_id, driver)
@@ -347,6 +362,7 @@ def process_ladies_prio(driver, lady_ids):
 
             process_gentleman(driver, url)
             logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
+            sent_count += 1
         except EmptyIntroLetterException:
             logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
         except LimitIsExceededException:
