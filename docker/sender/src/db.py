@@ -19,30 +19,41 @@ def execute_query(query, args=()):
 
 
 def get_gentleman_info():
-    query = 'select profile_id, age_from, age_to, priority from gentleman_info;'
+    query = 'select profile_id, age_from, age_to, priority, deleted from gentleman_info;'
     records = execute_query(query)
     return {record['profile_id']: GentlemanInfo(**record) for record in records}
 
 
 def get_gentleman_info_by_profile_id(profile_id):
-    query = 'select profile_id, age_from, age_to, priority from gentleman_info where profile_id=?;'
+    query = 'select profile_id, age_from, age_to, priority, deleted from gentleman_info where profile_id=?;'
     records = execute_query(query, (profile_id,))
     return GentlemanInfo(**records[0]) if records else None
 
 
-def get_gentlemen_info_by_priority(priority):
-    query = 'select profile_id, age_from, age_to, priority from gentleman_info where priority=?;'
-    records = execute_query(query, (priority,))
+def get_gentlemen_by_filter(priority, age_from, age_to, deleted):
+    query = '''
+        select 
+            profile_id, age_from, age_to, priority 
+        from 
+            gentleman_info
+        where
+            priority = ? and 
+            (age_from <=? or age_from is NULL or age_from = 0) and 
+            (age_to >= ? or age_to is NULL or age_to = 0) and 
+            (deleted = ? or deleted is NULL)
+        ;
+    '''
+    records = execute_query(query, (priority, age_from, age_to, deleted))
     return [GentlemanInfo(**record) for record in records] if records else None
 
 
 def put_gentleman_info(gentleman_info):
-    query = 'insert into gentleman_info (profile_id, age_from, age_to, priority) values (?, ?, ?, ?);'
+    query = 'insert into gentleman_info (profile_id, age_from, age_to, priority, deleted) values (?, ?, ?, ?, ?);'
     execute_query(query, tuple(gentleman_info.dict().values()))
 
 
 def update_gentleman_info(gentleman_info):
-    query = 'update gentleman_info set profile_id=?, age_from=?, age_to=?, priority=? where profile_id = ?;'
+    query = 'update gentleman_info set profile_id=?, age_from=?, age_to=?, priority=?, deleted=? where profile_id = ?;'
     execute_query(query, tuple(gentleman_info.dict().values()) + (gentleman_info.profile_id,))
 
 

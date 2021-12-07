@@ -33,7 +33,7 @@ rebuild:
 	docker-compose build --no-cache
 
 logs:
-	docker-compose logs -f
+	docker-compose logs -f --tail=100
 
 top:
 	docker-compose top

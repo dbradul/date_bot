@@ -11,6 +11,7 @@ class GentlemanInfo(MyBaseModel):
     age_from: Optional[int] = 0
     age_to: Optional[int] = 0
     priority: Optional[int] = 0
+    deleted: Optional[bool] = False
 
 
 class LadyInfo(MyBaseModel):

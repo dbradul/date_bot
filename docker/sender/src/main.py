@@ -40,6 +40,7 @@ AGE_RANGE_MAP = {
     (40, 49): 5,
     (50, float('inf')): 0,
 }
+DAILY_LETTERS_PER_LADY_LIMIT = 100
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -133,7 +134,7 @@ def process_gentleman(driver, url):
             except Exception as ex:
                 pass
 
-    submit_button = driver.find_element_by_css_selector('button[id="btn_submit"]')
+    submit_button = driver.find_element(By.CSS_SELECTOR, 'button[id="btn_submit"]')
     submit_button.click()
 
 
@@ -143,37 +144,41 @@ def fetch_gentleman_profile_info(gentleman_id, driver):
     profile_link = f'{BASE_URL}/profile?id={gentleman_id}'
     gentleman_info = db.get_gentleman_info_by_profile_id(gentleman_id)
 
-    if not (gentleman_info and gentleman_info.age_from):
-        driver.execute_script('window.open()')
-        driver.switch_to.window(driver.window_handles[-1])
-        driver.get(profile_link)
-        xpath = "//span[text()='I am interested in ladies between:']"
-        WebDriverWait(driver, TIMEOUT).until(EC.element_to_be_clickable((By.XPATH, xpath)))
-        info_text = driver.find_element(By.XPATH, xpath).find_element_by_xpath('..').text.replace('\n', '')
-        patterns = [
-            '.* (\d+) - (\d+)',
-            '.* -- - (\d+)',
-        ]
+    if gentleman_info.age_from is None or gentleman_info.age_to is None:
+        gentleman_info.age_to = 0
+        gentleman_info.age_from = 0
 
-        if not gentleman_info:
-            gentleman_info = GentlemanInfo(
-                profile_id=gentleman_id,
-            )
-            logger.info(f'CREATE new gentleman record\n')
-        else:
-            logger.info(f'UPDATE existing gentleman record\n')
-        for pattern in patterns:
-            if m := re.match(pattern, info_text):
-                age_from, age_to = m.groups() if len(m.groups()) == 2 else [0, m.groups()[0]]
-                gentleman_info.age_from = int(age_from)
-                gentleman_info.age_to = int(age_to)
-                gentleman_info.priority = 0
-                break
+        try:
+            driver.execute_script('window.open()')
+            driver.switch_to.window(driver.window_handles[-1])
+            driver.get(profile_link)
 
-        db.upsert_gentlemen_by_profile_id(gentleman_info)
+            xpath_deleted = "//p[text()=\"The user that you're looking for could not be found.\"]"
+            if driver.find_elements(By.XPATH, xpath_deleted):
+                gentleman_info.deleted = True
+                logger.info(f'This gentleman is marked as deleted and will not be processed anymore: {gentleman_info}')
+            else:
+                xpath = "//span[text()='I am interested in ladies between:']"
+                WebDriverWait(driver, TIMEOUT).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+                info_text = driver.find_element(By.XPATH, xpath).find_element(By.XPATH, '..').text.replace('\n', '')
+                patterns = [
+                    '.* (\d+) - (\d+)',
+                    '.* -- - (\d+)',
+                ]
 
-        driver.close()
-        driver.switch_to.window(driver.window_handles[-1])
+                for pattern in patterns:
+                    if m := re.match(pattern, info_text):
+                        age_from, age_to = m.groups() if len(m.groups()) == 2 else [0, m.groups()[0]]
+                        gentleman_info.age_from = int(age_from)
+                        gentleman_info.age_to = int(age_to)
+                        gentleman_info.priority = 0
+                        break
+
+            db.upsert_gentlemen_by_profile_id(gentleman_info)
+
+        finally:
+            driver.close()
+            driver.switch_to.window(driver.window_handles[-1])
 
     return gentleman_info
 
@@ -218,12 +223,6 @@ def process_gentlemen(driver, lady_id):
         logger.info(f'No results for given search criteria -> proceed with another letter, if any')
         return
 
-    # lady_info = [
-    #     e.text
-    #     for e in driver.find_elements(By.CSS_SELECTOR, 'p[class="small gray"]')
-    #     if e.text.endswith('Ukraine')
-    # ]
-    # lady_age = int(lady_info[0].split(', ')[0])
     lady_profile_info = fetch_lady_profile_info(lady_id, driver)
 
     profile_links = [e.get_attribute('href') for e in driver.find_elements(By.CSS_SELECTOR, 'a[target="_blank"]')]
@@ -235,13 +234,6 @@ def process_gentlemen(driver, lady_id):
         if not has_match(lady_profile_info, profile_info):
             logger.info(f'Not matched age -> skipped. Lady={lady_profile_info}, gentleman={profile_info}')
             continue
-        # if profile_info.age_to:
-        #     matched_age = profile_info.age_from <= lady_age <= profile_info.age_to
-        #     if not matched_age:
-        #         logger.info(
-        #             f'Not matched age -> skipped. Lady link = {profile_links[0]}, gentleman link = {profile_link}'
-        #         )
-        #         continue
 
         gentleman_url = send_intro_button.get_attribute('href')
 
@@ -337,39 +329,52 @@ def has_match(lady_info, gentleman_info):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def process_ladies_prio(driver, lady_ids):
-    gentlemen_ids = [g.profile_id for g in db.get_gentlemen_info_by_priority(priority=1)]
-    SENT_COUNT_LIMIT = 50
+    # gentlemen_ids = [g.profile_id for g in db.get_active_gentlemen_info_by_priority(priority=1)]
     sent_count = 0
     lady_id_prev = None
 
-    for lady_id, gentleman_id in itertools.product(lady_ids, gentlemen_ids):
-        url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
+    # for lady_id, gentleman_id in itertools.product(lady_ids, gentlemen_ids):
+    for lady_id in lady_ids:
 
-        if lady_id_prev != lady_id:
-            lady_id_prev = lady_id
-            sent_count = 0
+        lady_profile_info = fetch_lady_profile_info(lady_id, driver)
+        gentlemen_ids = [
+            g.profile_id
+            for g in db.get_gentlemen_by_filter(
+                priority=1,
+                age_from=lady_profile_info.age,
+                age_to=lady_profile_info.age,
+                deleted=False,
+            )
+        ]
 
-        if sent_count == SENT_COUNT_LIMIT:
-            logger.info(f'Reached limit of {SENT_COUNT_LIMIT} daily email for lady id={lady_id}.')
-            continue
+        for gentleman_id in gentlemen_ids:
+            url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
 
-        try:
-            profile_info = fetch_gentleman_profile_info(gentleman_id, driver)
-            lady_profile_info = fetch_lady_profile_info(lady_id, driver)
+            if lady_id_prev != lady_id:
+                lady_id_prev = lady_id
+                sent_count = 0
 
-            if not has_match(lady_profile_info, profile_info):
-                logger.info(f'Not matched age -> skipped. Lady={lady_profile_info}, gentleman={profile_info}')
+            if sent_count == DAILY_LETTERS_PER_LADY_LIMIT:
+                logger.info(f'Reached limit of {DAILY_LETTERS_PER_LADY_LIMIT} daily email for lady id={lady_id}.')
                 continue
 
-            process_gentleman(driver, url)
-            logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
-            sent_count += 1
-        except EmptyIntroLetterException:
-            logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
-        except LimitIsExceededException:
-            raise
-        except Exception as ex:
-            logger.error(f'Exception {ex} for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+            try:
+                fetch_gentleman_profile_info(gentleman_id, driver)
+                # lady_profile_info = fetch_lady_profile_info(lady_id, driver)
+
+                # if not has_match(lady_profile_info, profile_info):
+                #     logger.info(f'Not matched age -> skipped. Lady={lady_profile_info}, gentleman={profile_info}')
+                #     continue
+
+                process_gentleman(driver, url)
+                logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
+                sent_count += 1
+            except EmptyIntroLetterException:
+                logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+            except LimitIsExceededException:
+                raise
+            except Exception as ex:
+                logger.error(f'Exception {ex} for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -436,11 +441,11 @@ def collect_lady_ids(driver):
     resumed_and_filtered_lady_ids = itertools.dropwhile(
         lambda x: RESUME_FROM_LADY_ID and x != RESUME_FROM_LADY_ID, filtered_lady_ids
     )
+    result = list(resumed_and_filtered_lady_ids)
 
-    logger.info(list(filtered_lady_ids))
-    logger.info(list(resumed_and_filtered_lady_ids))
-    #return resumed_and_filtered_lady_ids
-    return filtered_lady_ids
+    logger.info(f'Processing ladies in the following order: {result}')
+
+    return result
 
 
 # ----------------------------------------------------------------------------------------------------------------------
