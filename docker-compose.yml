@@ -1,26 +1,55 @@
 version: '3'
 
 services:
-  sender:
-    build: ./docker/sender/
+
+  manager:
+    build: ./services/manager/
     command: python src/main.py
+    restart: always
     volumes:
-      - ./docker/sender/src:/app/src
-      - ./docker/sender/log:/app/log
-      - ./docker/sender/date.db:/app/date.db
-      - ./docker/sender/screenshots:/app/screenshots
+      - ./services/manager/src:/app/src
+      - sender_log:/app/log
+      - ./services/sender/date.db:/app/date.db
+#      - ./services:/app/docker
+      - /var/run/docker.sock:/var/run/docker.sock
+#      - ./docker/sender/screenshots:/app/screenshots
+    env_file:
+      - .env
+
+  mongo:
+    image: mongo
+    env_file:
+      - .env
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - ${MONGO_PORT}:${MONGO_PORT}
+
+  sender:
+    build: ./services/sender/
+    command: python src/main.py
+#    restart: always
+    volumes:
+      - ./services/sender/src:/app/src
+      - sender_log:/app/log
+      - ./services/sender/date.db:/app/date.db
+      - ./services/sender/screenshots:/app/screenshots
     env_file:
       - .env
 
   browser:
-    build: ./docker/browser/
+    build: ./services/browser/
     command: /app/start-browser.sh
+#    restart: always
     ports:
       - 9222:${CHROME_REMOTE_DEBUG_PORT}
     env_file:
       - .env
     volumes:
-      - ./docker/browser/start-browser.sh:/app/start-browser.sh
+      - ./services/browser/start-browser.sh:/app/start-browser.sh
 
 volumes:
+  mongo_data: {}
   browser_data: {}
+  sender_log: {}

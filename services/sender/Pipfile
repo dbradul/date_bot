@@ -10,6 +10,7 @@ pydantic = "*"
 pytelegrambotapi = "*"
 docker = "*"
 docker-compose = "*"
+pymongo = "*"
 
 [dev-packages]
 

@@ -35,14 +35,14 @@ def reverse_readline(filename, buf_size=8192):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-# TODO: Fix code duplication
+# TODO: Use separate container and DB with ORM
 
 import os
 import sqlite3
 from pydantic import BaseModel
 from typing import Optional
 
-DB_FILEPATH = './docker/sender/date.db'
+DB_FILEPATH = '/app/date.db'
 
 
 class GentlemanInfo(BaseModel):

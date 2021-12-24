@@ -14,6 +14,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
+import config
 import db
 from exceptions import (
     EmptyIntroLetterException,
@@ -91,9 +92,13 @@ def login(driver):
         EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[id="ajax_office_login_logins_ident"]'))
     )
     username = driver.find_element(By.CSS_SELECTOR, 'input[id="ajax_office_login_logins_ident"]')
+    _cleanup_input_field(username)
     username.send_keys(os.getenv('LOGIN', ''))
+
     password = driver.find_element(By.CSS_SELECTOR, 'input[id="ajax_office_login_logins_password"]')
+    _cleanup_input_field(password)
     password.send_keys(os.getenv('PASSWORD', ''))
+
     submit = driver.find_element(By.CSS_SELECTOR, 'button[class="btn"]')
     submit.click()
     # submit.send_keys(Keys.ENTER)
@@ -102,7 +107,8 @@ def login(driver):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def _cleanup_input_field(input_field):
-    _ = [input_field.send_keys(Keys.BACKSPACE) for _ in range(10)]
+    value = input_field.get_attribute('value')
+    _ = [input_field.send_keys(Keys.BACKSPACE) for _ in range(len(value))]
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -438,8 +444,9 @@ def collect_lady_ids(driver):
 
     # Pickup among available
     filtered_lady_ids = filter(lambda x: x not in BLACK_LIST_LADIES, lady_ids)
+    resume_from_lady_id = config.get('RESUME_FROM_ID')
     resumed_and_filtered_lady_ids = itertools.dropwhile(
-        lambda x: RESUME_FROM_LADY_ID and x != RESUME_FROM_LADY_ID, filtered_lady_ids
+        lambda x: resume_from_lady_id and x != resume_from_lady_id, filtered_lady_ids
     )
     result = list(resumed_and_filtered_lady_ids)
 

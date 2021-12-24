@@ -27,10 +27,10 @@ restart:
 	docker-compose restart
 
 build:
-	docker-compose build
+	docker-compose build --force-rm
 
 rebuild:
-	docker-compose build --no-cache
+	docker-compose build --force-rm --no-cache
 
 logs:
 	docker-compose logs -f --tail=100
