@@ -150,7 +150,11 @@ def fetch_gentleman_profile_info(gentleman_id, driver):
     profile_link = f'{BASE_URL}/profile?id={gentleman_id}'
     gentleman_info = db.get_gentleman_info_by_profile_id(gentleman_id)
 
-    if gentleman_info.age_from is None or gentleman_info.age_to is None:
+    # if gentleman_info.age_from is None or gentleman_info.age_to is None:
+    if (gentleman_info is None) or (gentleman_info.age_from is None or gentleman_info.age_to is None):
+        if gentleman_info is None:
+            gentleman_info = GentlemanInfo(profile_id=gentleman_id)
+
         gentleman_info.age_to = 0
         gentleman_info.age_from = 0
 
