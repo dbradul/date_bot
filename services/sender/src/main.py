@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from collections import defaultdict
 
 import datetime
 import itertools
@@ -19,6 +20,7 @@ import db
 from exceptions import (
     EmptyIntroLetterException,
     LimitIsExceededException,
+    DailyLimitForALadyIsExceededException,
     msg_id_exception_map,
 )
 from models import GentlemanInfo, LadyInfo
@@ -43,6 +45,10 @@ AGE_RANGE_MAP = {
 }
 DAILY_LETTERS_PER_LADY_LIMIT = 100
 
+
+# ----------------------------------------------------------------------------------------------------------------------
+class RunContext:
+    ladies = defaultdict(int)
 
 # ----------------------------------------------------------------------------------------------------------------------
 def get_delta_from_age_range(age):
@@ -73,6 +79,7 @@ def create_driver(attach_mode=True, download_dir=None):
         )
 
         driver = webdriver.Chrome(executable_path=CHROME_DRIVER_PATH, options=options)
+        driver.context = RunContext()
 
         yield driver
 
@@ -112,7 +119,7 @@ def _cleanup_input_field(input_field):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-def process_gentleman(driver, url):
+def process_gentleman(driver, url, lady_id):
     driver.get(url)
 
     for k, v in msg_id_exception_map.items():
@@ -142,7 +149,10 @@ def process_gentleman(driver, url):
 
     submit_button = driver.find_element(By.CSS_SELECTOR, 'button[id="btn_submit"]')
     submit_button.click()
+    driver.context.ladies[lady_id]  += 1
 
+    if driver.context.ladies[lady_id] == DAILY_LETTERS_PER_LADY_LIMIT:
+        raise DailyLimitForALadyIsExceededException()
 
 # ----------------------------------------------------------------------------------------------------------------------
 @lru_cache()
@@ -251,7 +261,7 @@ def process_gentlemen(driver, lady_id):
         driver.switch_to.window(driver.window_handles[-1])
 
         try:
-            process_gentleman(driver, gentleman_url)
+            process_gentleman(driver, gentleman_url, lady_id)
         except:
             Screener.push_screen(driver)
             raise
@@ -261,7 +271,7 @@ def process_gentlemen(driver, lady_id):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-def process_lady(driver, lady_id, online_status, country, intro_letter):
+def process_lady(driver, lady_id, online_status, country, intro_letter, register_range, login_range, age_policy, search_mode):
     logger.info(f'Started processing lady with id={lady_id}, country={country}, letter=\'{intro_letter}\'')
     driver.get(f'{BASE_URL}/search_men_office/?women_id={lady_id}')
 
@@ -274,36 +284,43 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
         is_online.click()
     elif is_online.get_attribute('checked') is None and online_status:
         is_online.click()
-    reg_date_from = driver.find_element(By.CSS_SELECTOR, 'input[name="reg_date_from"]')
-    reg_date_to = driver.find_element(By.CSS_SELECTOR, 'input[name="reg_date_to"]')
-    last_login_from = driver.find_element(By.CSS_SELECTOR, 'input[name="date_from"]')
-    last_login_to = driver.find_element(By.CSS_SELECTOR, 'input[name="date_to"]')
 
     # TODO: Replace with Wait-method
-    countries = driver.find_element(By.CSS_SELECTOR, 'select[id="fk_countries"]')
-    time.sleep(3)  # dropdown list is populated in deferred way
-    countries.send_keys(country)
+    if country:
+        countries = driver.find_element(By.CSS_SELECTOR, 'select[id="fk_countries"]')
+        time.sleep(3)  # dropdown list is populated in deferred way
+        countries.send_keys(country)
 
-    age_from = driver.find_element(By.CSS_SELECTOR, 'select[name="age_from"]')
-    lady_age = driver.find_elements(By.CSS_SELECTOR, 'p[class="small gray"]')[1].text.split(', ')[0]
-    gentleman_age_from = int(lady_age) + get_delta_from_age_range(int(lady_age))
-    age_from_options = age_from.find_elements(By.CSS_SELECTOR, 'option')
-    for age_from_option in age_from_options[1:]:
-        if int(age_from_option.text) == gentleman_age_from:
-            age_from_option.click()
-            break
-    age_to = driver.find_element(By.CSS_SELECTOR, 'select[name="age_to"]')
-    age_to.find_elements(By.CSS_SELECTOR, 'option')[-1].click()
+    if age_policy:
+        age_from = driver.find_element(By.CSS_SELECTOR, 'select[name="age_from"]')
+        lady_age = driver.find_elements(By.CSS_SELECTOR, 'p[class="small gray"]')[1].text.split(', ')[0]
+        gentleman_age_from = int(lady_age) + get_delta_from_age_range(int(lady_age))
+        age_from_options = age_from.find_elements(By.CSS_SELECTOR, 'option')
+        for age_from_option in age_from_options[1:]:
+            if int(age_from_option.text) == gentleman_age_from:
+                age_from_option.click()
+                break
+        age_to = driver.find_element(By.CSS_SELECTOR, 'select[name="age_to"]')
+        age_to.find_elements(By.CSS_SELECTOR, 'option')[-1].click()
 
-    current_datetime = datetime.datetime.now()
-    _cleanup_input_field(reg_date_from)
-    reg_date_from.send_keys('2020-08-01')
-    _cleanup_input_field(reg_date_to)
-    reg_date_to.send_keys(current_datetime.date().strftime('%Y-%m-%d'))
-    _cleanup_input_field(last_login_from)
-    last_login_from.send_keys((current_datetime - datetime.timedelta(days=7)).strftime('%Y-%m-%d'))
-    _cleanup_input_field(last_login_to)
-    last_login_to.send_keys(current_datetime.date().strftime('%Y-%m-%d'))
+    if register_range:
+        register_from, register_to = register_range
+        reg_date_from = driver.find_element(By.CSS_SELECTOR, 'input[name="reg_date_from"]')
+        reg_date_to = driver.find_element(By.CSS_SELECTOR, 'input[name="reg_date_to"]')
+        _cleanup_input_field(reg_date_from)
+        reg_date_from.send_keys(register_from)
+        _cleanup_input_field(reg_date_to)
+        # reg_date_to.send_keys(current_datetime.date().strftime('%Y-%m-%d'))
+        reg_date_to.send_keys(register_to)
+
+    if login_range:
+        login_from, login_to = login_range
+        last_login_from = driver.find_element(By.CSS_SELECTOR, 'input[name="date_from"]')
+        last_login_to = driver.find_element(By.CSS_SELECTOR, 'input[name="date_to"]')
+        _cleanup_input_field(last_login_from)
+        last_login_from.send_keys(login_from)
+        _cleanup_input_field(last_login_to)
+        last_login_to.send_keys(login_to)
 
     intro_types = driver.find_element(By.CSS_SELECTOR, 'select[name="intro_type"]')
     intro_types_options = intro_types.find_elements(By.CSS_SELECTOR, 'option')
@@ -312,6 +329,15 @@ def process_lady(driver, lady_id, online_status, country, intro_letter):
         if intro_types_option.text == intro_letter:
             intro_types_option.click()
             break
+
+    if search_mode:
+        search_modes = driver.find_element(By.CSS_SELECTOR, 'select[name="search_mode"]')
+        search_mode_options = search_modes.find_elements(By.CSS_SELECTOR, 'option')
+
+        for search_mode_option in search_mode_options:
+            if search_mode_option.text == search_mode:
+                search_mode_option.click()
+                break
 
     submit = driver.find_element_by_css_selector('button[class="btn"]')
     submit.click()
@@ -376,7 +402,7 @@ def process_ladies_prio(driver, lady_ids):
                 #     logger.info(f'Not matched age -> skipped. Lady={lady_profile_info}, gentleman={profile_info}')
                 #     continue
 
-                process_gentleman(driver, url)
+                process_gentleman(driver, url, lady_id)
                 logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
                 sent_count += 1
             except EmptyIntroLetterException:
@@ -389,26 +415,42 @@ def process_ladies_prio(driver, lady_ids):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def process_ladies(driver, lady_ids):
-    online_statuses = [True, False]
-    countries = ['United States', 'Canada', 'Australia', 'United Kingdom', 'New Zealand']
+    # online_statuses = [True, False]
+    # countries = ['United States', 'Canada', 'Australia', 'United Kingdom', 'New Zealand']
+    online_statuses = [True]
+    countries = ['']
     intro_letters = [
+        'Send Fifth intro letter',
         'Send Fourth intro letter',
         'Send Third intro letter',
         'Send Second intro letter',
         'Send First intro letter',
     ]
+    # register_range = ('2020-08-01', datetime.datetime.now().date().strftime('%Y-%m-%d'))
+    # login_range = ((datetime.datetime.now().date() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'),
+    #                datetime.datetime.now().date().strftime('%Y-%m-%d'))
+    register_range = None
+    login_range = None
+    age_policy = None
+    search_mode = 'Basic'
 
     for online_status, country, lady_id, intro_letter in itertools.product(
         online_statuses, countries, lady_ids, intro_letters
     ):
+        if driver.context.ladies[lady_id] >= DAILY_LETTERS_PER_LADY_LIMIT:
+            logger.info(f'Skipping lady due to reached limit, id={lady_id}.')
+            continue
+
         driver.execute_script('window.open()')
         driver.switch_to.window(driver.window_handles[-1])
 
         try:
-            process_lady(driver, lady_id, online_status, country, intro_letter)
+            process_lady(driver, lady_id, online_status, country, intro_letter, register_range, login_range, age_policy, search_mode)
         except EmptyIntroLetterException:
             logger.info(f'Empty letter \'{intro_letter}\' for lady id={lady_id} -> skipping')
             Screener.pop_screen()
+        except DailyLimitForALadyIsExceededException:
+            logger.info(f'Reached limit of {DAILY_LETTERS_PER_LADY_LIMIT} daily email for lady id={lady_id}.')
 
         driver.close()
         driver.switch_to.window(driver.window_handles[-1])
@@ -462,8 +504,9 @@ def collect_lady_ids(driver):
 # ----------------------------------------------------------------------------------------------------------------------
 def run_sending(driver):
     lady_ids = collect_lady_ids(driver)
-    process_ladies_prio(driver, lady_ids)
+    # process_ladies_prio(driver, lady_ids)
     process_ladies(driver, lady_ids)
+    process_ladies_prio(driver, lady_ids)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
