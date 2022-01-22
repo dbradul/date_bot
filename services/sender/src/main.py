@@ -420,11 +420,11 @@ def process_ladies(driver, lady_ids):
     online_statuses = [True]
     countries = ['']
     intro_letters = [
-        'Send Fifth intro letter',
-        'Send Fourth intro letter',
-        'Send Third intro letter',
-        'Send Second intro letter',
         'Send First intro letter',
+        'Send Second intro letter',
+        'Send Third intro letter',
+        'Send Fourth intro letter',
+        'Send Fifth intro letter',
     ]
     # register_range = ('2020-08-01', datetime.datetime.now().date().strftime('%Y-%m-%d'))
     # login_range = ((datetime.datetime.now().date() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'),
