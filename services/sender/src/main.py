@@ -420,8 +420,8 @@ def process_ladies(driver, lady_ids):
     online_statuses = [True]
     countries = ['']
     intro_letters = [
-        'Send First intro letter',
         'Send Second intro letter',
+        'Send First intro letter',
         'Send Third intro letter',
         'Send Fourth intro letter',
         'Send Fifth intro letter',
