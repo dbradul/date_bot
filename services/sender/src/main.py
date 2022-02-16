@@ -364,6 +364,63 @@ def has_match(lady_info, gentleman_info):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
+def process_queue_of_received_intros(driver):
+    driver.get(f'{BASE_URL}/mailbox?folder=sent&type=intro')
+
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'li[class="new_mail"]'))
+    )
+
+    def _process_queue_of_received_intros():
+        sent_intro_infos = driver.find_elements(By.CSS_SELECTOR, 'li[class="new_mail"]')
+        for sent_intro_info in sent_intro_infos:
+            lady_id = sent_intro_info.find_element(By.CSS_SELECTOR, 'a[target="_blank"]').text
+            gentleman_id = sent_intro_info.find_element(By.CSS_SELECTOR, 'span[class="bold"]').text[1:-1]
+            url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
+
+            try:
+                driver.execute_script('window.open()')
+                driver.switch_to.window(driver.window_handles[-1])
+
+                try:
+                    process_gentleman(driver, url, lady_id)
+                    logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
+                    # process_gentleman(driver, url_to_send['url'], url_to_send['lady_id'])
+                    # logger.info(f'Sent letter for lady id={url_to_send["lady_id"]}, gentleman id = {url_to_send["gentleman_id"]} SUCCESSFULLY!')
+                except:
+                    Screener.push_screen(driver)
+                    raise
+                finally:
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[-1])
+
+            except EmptyIntroLetterException:
+                logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+            except LimitIsExceededException:
+                raise
+            except Exception as ex:
+                logger.error(f'Exception {ex} for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+
+    _process_queue_of_received_intros()
+
+    total_number_text = driver.find_element(By.CSS_SELECTOR, 'div[class="nav_container"]')\
+                              .find_element(By.CSS_SELECTOR, 'div[class="f_left"]').text
+    total_number = int(total_number_text.split('from ')[-1])
+    current_number = 0
+    while current_number <= total_number:
+        current_number += 20
+        url = f'{BASE_URL}/mailbox?folder=sent&type=intro&_start={current_number}'
+        driver.get(url)
+        logger.info(f'Starting next page: {url}')
+
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, 'li[class="new_mail"]'))
+        )
+
+        _process_queue_of_received_intros()
+
+
+# ----------------------------------------------------------------------------------------------------------------------
 def process_ladies_prio(driver, lady_ids):
     # gentlemen_ids = [g.profile_id for g in db.get_active_gentlemen_info_by_priority(priority=1)]
     sent_count = 0
@@ -505,9 +562,9 @@ def collect_lady_ids(driver):
 def run_sending(driver):
     lady_ids = collect_lady_ids(driver)
     # process_ladies_prio(driver, lady_ids)
-    process_ladies(driver, lady_ids)
-    process_ladies_prio(driver, lady_ids)
-
+    # process_ladies(driver, lady_ids)
+    # process_ladies_prio(driver, lady_ids)
+    process_queue_of_received_intros(driver)
 
 # ----------------------------------------------------------------------------------------------------------------------
 def main():
