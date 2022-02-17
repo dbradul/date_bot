@@ -10,11 +10,14 @@ services:
       - ./services/manager/src:/app/src
       - sender_log:/app/log
       - ./services/sender/date.db:/app/date.db
-#      - ./services:/app/docker
       - /var/run/docker.sock:/var/run/docker.sock
 #      - ./docker/sender/screenshots:/app/screenshots
     env_file:
       - .env
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   mongo:
     image: mongo
@@ -37,6 +40,10 @@ services:
       - ./services/sender/screenshots:/app/screenshots
     env_file:
       - .env
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   browser:
     build: ./services/browser/

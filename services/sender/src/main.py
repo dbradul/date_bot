@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 
 import datetime
+import math
 import itertools
 import os
 import re
@@ -119,40 +120,54 @@ def _cleanup_input_field(input_field):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-def process_gentleman(driver, url, lady_id):
-    driver.get(url)
+def process_gentleman_in_new_window(driver, url, lady_id):
+    def _process_gentleman(driver, url, lady_id):
+        driver.get(url)
 
-    for k, v in msg_id_exception_map.items():
-        if driver.find_elements(By.CSS_SELECTOR, f'div[id="{k}"]'):
-            elem = driver.find_elements(By.CSS_SELECTOR, f'div[id="{k}"]')[0]
-            raise v(elem.text)
+        for k, v in msg_id_exception_map.items():
+            if driver.find_elements(By.CSS_SELECTOR, f'div[id="{k}"]'):
+                elem = driver.find_elements(By.CSS_SELECTOR, f'div[id="{k}"]')[0]
+                raise v(elem.text)
 
-    WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
+        WebDriverWait(driver, TIMEOUT).until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[id="btn_submit"]')))
 
-    subject = driver.find_element(By.CSS_SELECTOR, 'input[id="mbox_subject"]').get_attribute('value')
-    message = driver.find_element(By.CSS_SELECTOR, 'textarea[id="mbox_body"]').get_attribute('value')
-    if not subject and not message:
-        raise EmptyIntroLetterException()
+        subject = driver.find_element(By.CSS_SELECTOR, 'input[id="mbox_subject"]').get_attribute('value')
+        message = driver.find_element(By.CSS_SELECTOR, 'textarea[id="mbox_body"]').get_attribute('value')
+        if not subject and not message:
+            raise EmptyIntroLetterException()
 
-    attach_photo_button = driver.find_elements(By.CSS_SELECTOR, 'a[id="choose_photos_attached"]')
-    if attach_photo_button:
-        attach_photo_button[0].click()
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="fk_files[]"]'))
-        )
-        attach_photo_checkboxes = driver.find_elements(By.CSS_SELECTOR, 'input[name="fk_files[]"]')
-        for attach_photo_checkbox in attach_photo_checkboxes[:4]:
-            try:
-                attach_photo_checkbox.click()
-            except Exception as ex:
-                pass
+        attach_photo_button = driver.find_elements(By.CSS_SELECTOR, 'a[id="choose_photos_attached"]')
+        if attach_photo_button:
+            attach_photo_button[0].click()
+            WebDriverWait(driver, TIMEOUT).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="fk_files[]"]'))
+            )
+            attach_photo_checkboxes = driver.find_elements(By.CSS_SELECTOR, 'input[name="fk_files[]"]')
+            for attach_photo_checkbox in attach_photo_checkboxes[:4]:
+                try:
+                    attach_photo_checkbox.click()
+                except Exception as ex:
+                    pass
 
-    submit_button = driver.find_element(By.CSS_SELECTOR, 'button[id="btn_submit"]')
-    submit_button.click()
-    driver.context.ladies[lady_id]  += 1
+        submit_button = driver.find_element(By.CSS_SELECTOR, 'button[id="btn_submit"]')
+        submit_button.click()
+        driver.context.ladies[lady_id]  += 1
 
-    if driver.context.ladies[lady_id] == DAILY_LETTERS_PER_LADY_LIMIT:
-        raise DailyLimitForALadyIsExceededException()
+        if driver.context.ladies[lady_id] == DAILY_LETTERS_PER_LADY_LIMIT:
+            raise DailyLimitForALadyIsExceededException()
+
+    driver.execute_script('window.open()')
+    driver.switch_to.window(driver.window_handles[-1])
+
+    try:
+        _process_gentleman(driver, url, lady_id)
+    except:
+        Screener.push_screen(driver)
+        raise
+    finally:
+        driver.close()
+        driver.switch_to.window(driver.window_handles[-1])
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 @lru_cache()
@@ -257,17 +272,19 @@ def process_gentlemen(driver, lady_id):
 
         gentleman_url = send_intro_button.get_attribute('href')
 
-        driver.execute_script('window.open()')
-        driver.switch_to.window(driver.window_handles[-1])
+        process_gentleman_in_new_window(driver, gentleman_url, lady_id)
 
-        try:
-            process_gentleman(driver, gentleman_url, lady_id)
-        except:
-            Screener.push_screen(driver)
-            raise
-        finally:
-            driver.close()
-            driver.switch_to.window(driver.window_handles[-1])
+        # driver.execute_script('window.open()')
+        # driver.switch_to.window(driver.window_handles[-1])
+        #
+        # try:
+        #     process_gentleman_in_new_window(driver, gentleman_url, lady_id)
+        # except:
+        #     Screener.push_screen(driver)
+        #     raise
+        # finally:
+        #     driver.close()
+        #     driver.switch_to.window(driver.window_handles[-1])
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -365,11 +382,7 @@ def has_match(lady_info, gentleman_info):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def process_queue_of_received_intros(driver):
-    driver.get(f'{BASE_URL}/mailbox?folder=sent&type=intro')
-
-    WebDriverWait(driver, TIMEOUT).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, 'li[class="new_mail"]'))
-    )
+    PAGE_SIZE = 20
 
     def _process_queue_of_received_intros():
         sent_intro_infos = driver.find_elements(By.CSS_SELECTOR, 'li[class="new_mail"]')
@@ -379,45 +392,34 @@ def process_queue_of_received_intros(driver):
             url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
 
             try:
-                driver.execute_script('window.open()')
-                driver.switch_to.window(driver.window_handles[-1])
-
-                try:
-                    process_gentleman(driver, url, lady_id)
-                    logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
-                    # process_gentleman(driver, url_to_send['url'], url_to_send['lady_id'])
-                    # logger.info(f'Sent letter for lady id={url_to_send["lady_id"]}, gentleman id = {url_to_send["gentleman_id"]} SUCCESSFULLY!')
-                except:
-                    Screener.push_screen(driver)
-                    raise
-                finally:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[-1])
+                process_gentleman_in_new_window(driver, url, lady_id)
+                logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
 
             except EmptyIntroLetterException:
                 logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
             except LimitIsExceededException:
                 raise
             except Exception as ex:
-                logger.error(f'Exception {ex} for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+                logger.error(f'Exception \'{ex}\' for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
 
-    _process_queue_of_received_intros()
+    driver.get(f'{BASE_URL}/mailbox?folder=sent&type=intro')
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'li[class="new_mail"]'))
+    )
 
     total_number_text = driver.find_element(By.CSS_SELECTOR, 'div[class="nav_container"]')\
                               .find_element(By.CSS_SELECTOR, 'div[class="f_left"]').text
     total_number = int(total_number_text.split('from ')[-1])
-    current_number = 0
-    while current_number <= total_number:
-        current_number += 20
-        url = f'{BASE_URL}/mailbox?folder=sent&type=intro&_start={current_number}'
-        driver.get(url)
-        logger.info(f'Starting next page: {url}')
+    pages = math.ceil(total_number/PAGE_SIZE)
 
+    for page_num in range(pages):
+        url = f'{BASE_URL}/mailbox?folder=sent&type=intro&_start={page_num*PAGE_SIZE}'
+        logger.info(f'Starting next page: {page_num}, {url}')
+        _process_queue_of_received_intros()
+        driver.get(url)
         WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'li[class="new_mail"]'))
         )
-
-        _process_queue_of_received_intros()
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -453,13 +455,8 @@ def process_ladies_prio(driver, lady_ids):
 
             try:
                 fetch_gentleman_profile_info(gentleman_id, driver)
-                # lady_profile_info = fetch_lady_profile_info(lady_id, driver)
 
-                # if not has_match(lady_profile_info, profile_info):
-                #     logger.info(f'Not matched age -> skipped. Lady={lady_profile_info}, gentleman={profile_info}')
-                #     continue
-
-                process_gentleman(driver, url, lady_id)
+                process_gentleman_in_new_window(driver, url, lady_id)
                 logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
                 sent_count += 1
             except EmptyIntroLetterException:
@@ -474,6 +471,9 @@ def process_ladies_prio(driver, lady_ids):
 def process_ladies(driver, lady_ids):
     # online_statuses = [True, False]
     # countries = ['United States', 'Canada', 'Australia', 'United Kingdom', 'New Zealand']
+    # register_range = ('2020-08-01', datetime.datetime.now().date().strftime('%Y-%m-%d'))
+    # login_range = ((datetime.datetime.now().date() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'),
+    #                datetime.datetime.now().date().strftime('%Y-%m-%d'))
     online_statuses = [True]
     countries = ['']
     intro_letters = [
@@ -483,9 +483,6 @@ def process_ladies(driver, lady_ids):
         'Send Fourth intro letter',
         'Send Fifth intro letter',
     ]
-    # register_range = ('2020-08-01', datetime.datetime.now().date().strftime('%Y-%m-%d'))
-    # login_range = ((datetime.datetime.now().date() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'),
-    #                datetime.datetime.now().date().strftime('%Y-%m-%d'))
     register_range = None
     login_range = None
     age_policy = None
@@ -561,10 +558,10 @@ def collect_lady_ids(driver):
 # ----------------------------------------------------------------------------------------------------------------------
 def run_sending(driver):
     lady_ids = collect_lady_ids(driver)
-    # process_ladies_prio(driver, lady_ids)
     # process_ladies(driver, lady_ids)
     # process_ladies_prio(driver, lady_ids)
     process_queue_of_received_intros(driver)
+    process_ladies(driver, lady_ids)
 
 # ----------------------------------------------------------------------------------------------------------------------
 def main():
