@@ -394,22 +394,23 @@ def process_queue_of_received_intros(driver):
         WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'span[class="bold"]'))
         )
+
         sent_intro_infos = driver.find_elements(By.CSS_SELECTOR, 'li[class="new_mail"]')
         for sent_intro_info in sent_intro_infos:
-            lady_id = sent_intro_info.find_element(By.CSS_SELECTOR, 'a[target="_blank"]').text
-            gentleman_id = sent_intro_info.find_element(By.CSS_SELECTOR, 'span[class="bold"]').text[1:-1]
-            url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
+            if sent_intro_info.find_elements(By.CSS_SELECTOR, 'span[class="bold"]'):
+                lady_id = sent_intro_info.find_element(By.CSS_SELECTOR, 'a[target="_blank"]').text
+                gentleman_id = sent_intro_info.find_element(By.CSS_SELECTOR, 'span[class="bold"]').text[1:-1]
+                url = f'{BASE_URL}/send?mid={gentleman_id}&wid={lady_id}'
+                try:
+                    process_gentleman_in_new_window(driver, url, lady_id)
+                    logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
 
-            try:
-                process_gentleman_in_new_window(driver, url, lady_id)
-                logger.info(f'Sent letter for lady id={lady_id}, gentleman id = {gentleman_id} SUCCESSFULLY!')
-
-            except EmptyIntroLetterException:
-                logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
-            except LimitIsExceededException:
-                raise
-            except Exception as ex:
-                logger.error(f'Exception \'{ex}\' for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+                except EmptyIntroLetterException:
+                    logger.info(f'Empty letter for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
+                except LimitIsExceededException:
+                    raise
+                except Exception as ex:
+                    logger.error(f'Exception \'{ex}\' for lady id={lady_id}, gentleman id = {gentleman_id} -> skipping')
 
     driver.get(f'{BASE_URL}/mailbox?folder=sent&type=intro')
     WebDriverWait(driver, TIMEOUT).until(
