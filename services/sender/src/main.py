@@ -385,6 +385,15 @@ def process_queue_of_received_intros(driver):
     PAGE_SIZE = 20
 
     def _process_queue_of_received_intros():
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, 'li[class="new_mail"]'))
+        )
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, 'a[target="_blank"]'))
+        )
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, 'span[class="bold"]'))
+        )
         sent_intro_infos = driver.find_elements(By.CSS_SELECTOR, 'li[class="new_mail"]')
         for sent_intro_info in sent_intro_infos:
             lady_id = sent_intro_info.find_element(By.CSS_SELECTOR, 'a[target="_blank"]').text
@@ -404,9 +413,8 @@ def process_queue_of_received_intros(driver):
 
     driver.get(f'{BASE_URL}/mailbox?folder=sent&type=intro')
     WebDriverWait(driver, TIMEOUT).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, 'li[class="new_mail"]'))
+        EC.visibility_of_element_located((By.CSS_SELECTOR, 'div[class="nav_container"]'))
     )
-
     total_number_text = driver.find_element(By.CSS_SELECTOR, 'div[class="nav_container"]')\
                               .find_element(By.CSS_SELECTOR, 'div[class="f_left"]').text
     total_number = int(total_number_text.split('from ')[-1])
@@ -414,12 +422,10 @@ def process_queue_of_received_intros(driver):
 
     for page_num in range(pages):
         url = f'{BASE_URL}/mailbox?folder=sent&type=intro&_start={page_num*PAGE_SIZE}'
-        logger.info(f'Starting next page: {page_num}, {url}')
+        logger.info(f'Starting next page: {page_num+1}/{pages}, {url}')
         _process_queue_of_received_intros()
         driver.get(url)
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, 'li[class="new_mail"]'))
-        )
+
 
 
 # ----------------------------------------------------------------------------------------------------------------------
