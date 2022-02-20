@@ -162,7 +162,7 @@ def process_gentleman_in_new_window(driver, url, lady_id):
     try:
         _process_gentleman(driver, url, lady_id)
     except:
-        Screener.push_screen(driver)
+        # Screener.push_screen(driver)
         raise
     finally:
         driver.close()
@@ -589,7 +589,7 @@ def main():
         except Exception as ex:
             logger.error(f'FINISHED WITH UNEXPECTED ERROR: {repr(ex)}')
             dump_exception_stack(ex)
-            Screener.push_screen(driver)
+            # Screener.push_screen(driver)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
